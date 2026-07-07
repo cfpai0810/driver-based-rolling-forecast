@@ -1,0 +1,37 @@
+period,line_item,actual,status
+2026-01,Revenue,1200000,locked
+2026-01,COGS,492000,locked
+2026-01,Marketing Spend,88000,locked
+2026-01,Headcount Cost,310000,locked
+2026-01,IT Infrastructure,45000,locked
+2026-01,R&D Expense,180000,locked
+2026-02,Revenue,1248000,locked
+2026-02,COGS,517000,locked
+2026-02,Marketing Spend,90000,locked
+2026-02,Headcount Cost,312000,locked
+2026-02,IT Infrastructure,45000,locked
+2026-02,R&D Expense,190000,locked
+2026-03,Revenue,1298000,locked
+2026-03,COGS,539000,locked
+2026-03,Marketing Spend,92000,locked
+2026-03,Headcount Cost,315000,locked
+2026-03,IT Infrastructure,45000,locked
+2026-03,R&D Expense,205000,locked
+2026-04,Revenue,1310000,locked
+2026-04,COGS,544000,locked
+2026-04,Marketing Spend,94000,locked
+2026-04,Headcount Cost,318000,locked
+2026-04,IT Infrastructure,45000,locked
+2026-04,R&D Expense,220000,locked
+2026-05,Revenue,1362000,locked
+2026-05,COGS,567000,locked
+2026-05,Marketing Spend,96000,locked
+2026-05,Headcount Cost,321000,locked
+2026-05,IT Infrastructure,45000,locked
+2026-05,R&D Expense,238000,locked
+2026-06,Revenue,1350000,locked
+2026-06,COGS,563000,locked
+2026-06,Marketing Spend,98000,locked
+2026-06,Headcount Cost,324000,locked
+2026-06,IT Infrastructure,45000,locked
+2026-06,R&D Expense,252000,locked

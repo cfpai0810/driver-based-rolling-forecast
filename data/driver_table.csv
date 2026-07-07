@@ -1,0 +1,7 @@
+line_item,driver_type,driver_value,note
+Revenue,growth_pct,0.038,3.8% MoM growth — conservative vs recent 4%+ trend
+COGS,margin_pct,0.418,41.8% of revenue — assumes slight margin pressure continues
+Marketing Spend,fixed_growth,0.020,2% MoM increase — planned campaign ramp into Q3
+Headcount Cost,fixed_growth,0.010,1% MoM — one new hire per quarter
+IT Infrastructure,fixed,45000,Fixed contract — no change expected through Dec 2026
+R&D Expense,growth_pct,0.060,6% MoM — accelerated investment phase approved by board

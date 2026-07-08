@@ -1,0 +1,33 @@
+ROLLING FORECAST COMMENTARY - GENERATED OUTPUT
+============================================================
+Generated:       2026-07-08T15:42:48.460970+00:00
+Entity:          Valencia Operations
+Last actual:     2026-06
+Forecast period: 2026-07 to 2026-12
+Horizon:         6 months
+Model:           claude-sonnet-4-6
+Tokens:          1,895 in / 1,157 out
+Flags:           0 raised
+============================================================
+
+FORECAST OVERVIEW
+H2 2026 revenue totals EUR 8,490,872, yielding gross profit of EUR 4,941,688 at a 58.2% margin. Operating profit for the period is EUR 542,191, representing a 6.4% operating margin. August is the weakest month for operating profit at EUR 22,354, driven by the seasonal revenue trough (index 0.894, the second-lowest in the year) coinciding with R&D expense stepping up to EUR 283,147. The half runs an improving trajectory from July through December, with operating profit nearly tripling from EUR 56,308 to EUR 181,687 as seasonality lifts and the headcount build stabilises.
+
+DRIVER COMMENTARY
+
+**Revenue:** The 12% annual growth assumption applied to a trailing 12-month base of EUR 14,475,000 produces a EUR 16,212,000 annual target, implying an average monthly run rate of EUR 1,351,000, which sits above the EUR 1,206,250 implied by the trailing 12-month actuals and represents a meaningful step-up that has not yet been validated by recent performance. The seasonal shape is appropriate, with July and August the softest months (indices 0.920 and 0.894) before recovery through September and a strong Q4 peak in November and December (indices 1.157 and 1.227). The primary risk is that the 12% growth rate is an assumption with no visible demand-side evidence in this data set; if the actual growth rate tracks closer to, say, 8%, H2 revenue would fall short of the forecast by roughly EUR 340,000, compressing an already thin August operating profit into a loss.
+
+**Personnel Cost:** Headcount grows from 42 to a peak of 46 in October and November before attrition reduces it to 45 by December, with the cost per head implied by the model producing a H2 total of EUR 1,732,250 and a monthly range of EUR 276,250 to EUR 299,000. The build is back-weighted, with the September hire of three people being the single largest monthly addition, which increases the cost base at the same time R&D is compounding upward. The risk is attrition running above the one-per-month assumption; each additional unplanned departure either leaves revenue-generating or delivery capacity short, or triggers a replacement hire that adds recruitment cost not captured in the current model.
+
+**Marketing Spend:** New customer targets rise from 40 in August to a peak of 70 in November before stepping back to 50 in December, with a fixed EUR 1,200 CAC and EUR 25,000 monthly campaign budget producing a H2 total of EUR 534,000. The CAC assumption is uniform across all months, which may understate acquisition cost in the higher-volume months of October through November if channel saturation applies. The key risk is that the customer volume targets are not grounded in a pipeline or channel capacity analysis visible here, making the November target of 70 new customers the single assumption most worth pressure-testing against sales capacity.
+
+**Other costs:** COGS holds at a flat 41.8% of revenue throughout H2, producing a total of EUR 3,549,185 and leaving gross margin stable at 58.2% in every month, so margin is entirely volume-dependent with no modelled cost-of-delivery leverage or pressure. IT infrastructure is fixed at EUR 45,000 per month (EUR 270,000 H2 total), and R&D compounds at 6% month-on-month from EUR 267,120 in July to EUR 357,467 in December, accumulating to EUR 1,863,247 for the half, making it the largest single OpEx line and the fastest-growing cost in the model.
+
+KEY RISKS AND RECOMMENDATIONS
+
+- **The 12% revenue growth rate is the assumption with the highest leverage on the outcome:** the trailing 12-month base implies a current run rate materially below the target, and a 4-point miss on growth would eliminate most of August's operating profit and reduce H2 EBIT by an estimated EUR 340,000 or more. Obtain a pipeline-based revenue bridge from the commercial team before finalising the forecast.
+- **R&D compounding at 6% month-on-month is the fastest-growing cost line and is board-approved, but it is on a collision course with the seasonal revenue dip:** if revenue underperforms in July and August, the R&D ramp has no flex mechanism in the current model, meaning **operating losses in August become probable under even a modest revenue miss.** Model a scenario in which R&D growth is phased to begin in September rather than July.
+- **Watch the November new customer target of 70 acquisitions** as the leading indicator for whether the CAC-driven marketing spend is producing results; if the September and October actuals track below 55 and 60 respectively, the H2 revenue assumption will need to be revised downward and marketing spend recalibrated before the December close.
+
+DATA FLAGS
+No flags raised.

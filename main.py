@@ -64,10 +64,10 @@ if __name__ == "__main__":
     )
 
     # Step 7: Write output
-    output_path, audit = write_output(
+    txt_path, audit = write_output(
         commentary, full_df, flags,
         tok_in, tok_out, stop_reason,
-        last_actual, forecast_periods
+        last_actual, forecast_periods, seasonal_year
     )
 
     # Step 8: Write PDF
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     csv_path = export_pnl_csv(pnl_df, full_df, forecast_periods)
 
     print("\n[DONE] Pipeline complete.")
-    print("       Text: {}".format(output_path))
+    print("       Text: {}".format(txt_path))
     print("       PDF:  {}".format(pdf_path))
 
     # Human review check

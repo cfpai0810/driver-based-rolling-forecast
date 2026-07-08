@@ -309,8 +309,27 @@ def update_audit_pdf(pdf_path):
     AUDIT_LOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def update_audit_csv(csv_path):
+    """
+    Update the most recent audit log record with the P&L CSV path.
+
+    Called by export_pnl_csv() after the CSV is written. Mirrors
+    update_audit_pdf() so the audit trail records all three outputs:
+    the text commentary, the PDF report, and the P&L CSV export.
+    """
+    if not AUDIT_LOG.exists():
+        return
+    lines = AUDIT_LOG.read_text(encoding="utf-8").strip().split("\n")
+    if not lines or not lines[-1].strip():
+        return
+    last_record            = json.loads(lines[-1])
+    last_record["csv_file"] = str(csv_path)
+    lines[-1]              = json.dumps(last_record)
+    AUDIT_LOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def write_output(commentary, full_df, flags, tok_in, tok_out,
-                 stop_reason, last_actual, forecast_periods):
+                 stop_reason, last_actual, forecast_periods, seasonal_year=None):
     """
     Write commentary to a timestamped text file and append one JSONL
     audit record per run.
@@ -388,6 +407,7 @@ def write_output(commentary, full_df, flags, tok_in, tok_out,
         "forecast_start":   forecast_periods[0],
         "forecast_end":     forecast_periods[-1],
         "horizon_months":   FORECAST_HORIZON,
+        "seasonal_year":    seasonal_year,
         "actuals_rows":     len(full_df[full_df["type"] == "actual"]),
         "forecast_rows":    len(full_df[full_df["type"] == "forecast"]),
         "actuals_hash":     actuals_hash,
@@ -758,6 +778,9 @@ def export_pnl_csv(pnl_df, full_df, forecast_periods):
     csv_path = OUTPUT_DIR / "forecast_pnl_{}.csv".format(ts_file)
 
     pnl_df.to_csv(csv_path, index=False)
+
+    # Record the CSV path in the audit trail
+    update_audit_csv(csv_path)
 
     print("[OK] P&L CSV exported")
     print("     CSV:  {}".format(csv_path))

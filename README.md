@@ -258,11 +258,12 @@ Python 3.11 · pandas · Anthropic Claude API · python-dotenv · reportlab
 | # | Project | Status |
 |---|---------|--------|
 | 1 | AI Variance Commentary Engine | Complete |
-| 2 | Driver-Based Rolling Forecast Pipeline | Complete |
-| 3 | Anomaly Detection and Alert Agent | Planned |
-| 4 | NL Scenario Modelling Copilot | Planned |
+| 2 | Driver-Based Rolling Forecast Pipeline | This project |
+| 3 | Anomaly Detection and Alert Agent | Complete |
+| 4 | NL Scenario Modelling Copilot | Complete |
 | 5 | Budget Challenge Assistant | Planned |
 | 6 | Agentic Board Pack Generator | Planned |
-| 7 | Anaplan to Snowflake to LLM Pipeline | Planned |
-| 8 | Cuenta y Cocina Live AI Finance | Planned |
-| 9 | AI Governance Playbook | Planned |
+| 7 | Planning-to-Warehouse-to-LLM Pipeline | Planned |
+| 8 | 13-Week Cash Flow Forecasting Agent | Planned |
+| 9 | Multi-Entity Consolidation and FX Engine | Planned |
+| 10 | AI Governance Playbook | Planned |

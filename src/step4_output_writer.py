@@ -74,7 +74,45 @@ S_TBL_HDR = ParagraphStyle("TblHdr", fontName="Helvetica-Bold", fontSize=8,
 S_TBL_NUM = ParagraphStyle("TblNum", fontName="Helvetica", fontSize=8,
                 textColor=BODY_DARK, leading=10, alignment=TA_RIGHT)
 
+S_TBL_SM     = ParagraphStyle("TblSm",    fontName="Helvetica",      fontSize=7,
+                textColor=BODY_DARK, leading=9)
+S_TBL_SM_HDR = ParagraphStyle("TblSmHdr", fontName="Helvetica-Bold", fontSize=7,
+                textColor=DARK_BLUE, leading=9)
+S_TBL_SM_NUM = ParagraphStyle("TblSmNum", fontName="Helvetica",      fontSize=7,
+                textColor=BODY_DARK, leading=9, alignment=TA_RIGHT)
+
 EM = "—"   # em dash
+
+
+def compute_data_hashes():
+    """SHA-256 hashes of the two input files (actuals and driver table).
+
+    Both the CLI audit and the web audit need these; computing them once
+    here keeps the hash format identical.
+    """
+    with open(ACTUALS_FILE, "rb") as f:
+        actuals_hash = "sha256:" + hashlib.sha256(f.read()).hexdigest()
+    with open(DRIVER_FILE, "rb") as f:
+        driver_hash = "sha256:" + hashlib.sha256(f.read()).hexdigest()
+    return actuals_hash, driver_hash
+
+
+def check_requires_review(flags, stop_reason=None, tok_out=0,
+                          has_commentary=False):
+    """Determine whether a forecast run needs human review.
+
+    Shared between the CLI audit and the web audit so the triggers
+    are identical.
+    """
+    if len(flags) > 0:
+        return True
+    if not has_commentary:
+        return False
+    if stop_reason == "max_tokens":
+        return True
+    if tok_out < 200:
+        return True
+    return False
 
 
 def clean_markdown(text):
@@ -123,8 +161,18 @@ def parse_forecast_sections(commentary):
     return sections
 
 
-def _cover_block(entity, last_actual, forecast_periods, ts, tok_in, tok_out, nflags):
+def _cover_block(entity, last_actual, forecast_periods, ts,
+                 tok_in=0, tok_out=0, nflags=0, has_commentary=True):
     """Full-width dark blue cover block."""
+    if has_commentary:
+        subtitle = '{}  ·  Last actual: {}  ·  AI Generated  ·  {}'.format(
+            entity, last_actual, MODEL)
+        meta = 'Generated {}  ·  {:,}/{:,} tokens  ·  {} flag(s)'.format(
+            ts[:10], tok_in, tok_out, nflags)
+    else:
+        subtitle = '{}  ·  Last actual: {}  ·  Driver-based forecast'.format(
+            entity, last_actual)
+        meta = 'Generated {}  ·  {} flag(s)'.format(ts[:10], nflags)
     rows = [
         [Paragraph(
             '<font color="white"><b>ROLLING FORECAST — {} TO {}</b></font>'.format(
@@ -133,14 +181,12 @@ def _cover_block(entity, last_actual, forecast_periods, ts, tok_in, tok_out, nfl
                 textColor=colors.white, alignment=TA_CENTER)
         )],
         [Paragraph(
-            '<font color="#AACCEE">{}  ·  Last actual: {}  ·  AI Generated  ·  {}</font>'.format(
-                entity, last_actual, MODEL),
+            '<font color="#AACCEE">{}</font>'.format(subtitle),
             ParagraphStyle("CS", fontName="Helvetica", fontSize=9,
                 textColor=colors.HexColor("#AACCEE"), alignment=TA_CENTER)
         )],
         [Paragraph(
-            '<font color="#6699BB">Generated {}  ·  {:,}/{:,} tokens  ·  {} flag(s)</font>'.format(
-                ts[:10], tok_in, tok_out, nflags),
+            '<font color="#6699BB">{}</font>'.format(meta),
             ParagraphStyle("CM", fontName="Helvetica", fontSize=8,
                 textColor=colors.HexColor("#6699BB"), alignment=TA_CENTER)
         )],
@@ -277,6 +323,85 @@ def _driver_table(drivers_df):
     return t
 
 
+def _headcount_schedule_table(headcount_df):
+    """Compact headcount hiring plan table."""
+    mn = {"01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr",
+          "05": "May", "06": "Jun", "07": "Jul", "08": "Aug",
+          "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec"}
+    cw = [1.8 * cm, 1.8 * cm, 2.0 * cm, 3.0 * cm]
+    rows = [[
+        Paragraph("<b>Period</b>", S_TBL_HDR),
+        Paragraph("<b>New hires</b>", S_TBL_HDR),
+        Paragraph("<b>Attrition</b>", S_TBL_HDR),
+        Paragraph("<b>Cost / head (ann.)</b>", S_TBL_HDR),
+    ]]
+    for _, r in headcount_df.iterrows():
+        p = r["period"]
+        rows.append([
+            Paragraph("{} {}".format(mn.get(p.split("-")[1], ""), p[:4]),
+                      S_TBL),
+            Paragraph("{:,.0f}".format(r["new_hires"]), S_TBL_NUM),
+            Paragraph("{:.1%}".format(r["attrition_rate"]), S_TBL_NUM),
+            Paragraph("EUR {:,.0f}".format(r["cost_per_head_annual"]),
+                      S_TBL_NUM),
+        ])
+    style = [
+        ("BACKGROUND",    (0, 0), (-1, 0), TBL_HEADER),
+        ("LINEBELOW",     (0, 0), (-1, 0), 1, MID_BLUE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+        ("LINEBELOW",     (0, 1), (-1, -1), 0.5, RULE_COLOR),
+    ]
+    for i in range(1, len(rows)):
+        if i % 2 == 0:
+            style.append(("BACKGROUND", (0, i), (-1, i), ROW_ALT))
+    t = Table(rows, colWidths=cw)
+    t.setStyle(TableStyle(style))
+    return t
+
+
+def _customer_targets_table(customer_df):
+    """Compact customer acquisition targets table."""
+    mn = {"01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr",
+          "05": "May", "06": "Jun", "07": "Jul", "08": "Aug",
+          "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec"}
+    cw = [1.8 * cm, 2.4 * cm, 1.8 * cm, 2.4 * cm]
+    rows = [[
+        Paragraph("<b>Period</b>", S_TBL_HDR),
+        Paragraph("<b>New customers</b>", S_TBL_HDR),
+        Paragraph("<b>CAC</b>", S_TBL_HDR),
+        Paragraph("<b>Fixed campaign</b>", S_TBL_HDR),
+    ]]
+    for _, r in customer_df.iterrows():
+        p = r["period"]
+        rows.append([
+            Paragraph("{} {}".format(mn.get(p.split("-")[1], ""), p[:4]),
+                      S_TBL),
+            Paragraph("{:,.0f}".format(r["target_new_customers"]),
+                      S_TBL_NUM),
+            Paragraph("EUR {:,.0f}".format(r["cac"]), S_TBL_NUM),
+            Paragraph("EUR {:,.0f}".format(r["fixed_campaign"]),
+                      S_TBL_NUM),
+        ])
+    style = [
+        ("BACKGROUND",    (0, 0), (-1, 0), TBL_HEADER),
+        ("LINEBELOW",     (0, 0), (-1, 0), 1, MID_BLUE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+        ("LINEBELOW",     (0, 1), (-1, -1), 0.5, RULE_COLOR),
+    ]
+    for i in range(1, len(rows)):
+        if i % 2 == 0:
+            style.append(("BACKGROUND", (0, i), (-1, i), ROW_ALT))
+    t = Table(rows, colWidths=cw)
+    t.setStyle(TableStyle(style))
+    return t
+
+
 def _flag_box(text, severity="error"):
     """Full-width coloured flag box — reused from Project 1 pattern."""
     bg = FLAG_BG  if severity == "error" else AMBER_BG
@@ -388,15 +513,9 @@ def write_output(commentary, full_df, flags, tok_in, tok_out,
 
     output_path.write_text(header + commentary, encoding="utf-8")
 
-    with open(ACTUALS_FILE, "rb") as f:
-        actuals_hash = "sha256:" + hashlib.sha256(f.read()).hexdigest()
-    with open(DRIVER_FILE, "rb") as f:
-        driver_hash = "sha256:" + hashlib.sha256(f.read()).hexdigest()
-
-    requires_review = (
-        len(flags) > 0
-        or stop_reason == "max_tokens"
-        or (tok_out < 200 and stop_reason != "max_tokens")
+    actuals_hash, driver_hash = compute_data_hashes()
+    requires_review = check_requires_review(
+        flags, stop_reason, tok_out, has_commentary=True,
     )
 
     audit_record = {
@@ -439,74 +558,120 @@ def write_output(commentary, full_df, flags, tok_in, tok_out,
     return output_path, audit_record
 
 
-def _kpi_chart(forecast_periods, pnl_df, width, height):
+def _kpi_chart(full_df, last_actual, forecast_periods, pnl_df, width, height):
     """
     Dual-axis chart: Revenue as bars (left axis), EBIT as line (right axis).
-    Revenue is roughly 9x larger than EBIT, so separate axes keep both
-    readable. The EBIT line makes the seasonal profit shape visible.
+    Shows the full timeline (actuals + forecast) with a boundary marker.
     """
     d = Drawing(width, height)
 
-    months  = [p.split("-")[1] for p in forecast_periods]
-    rev_row  = pnl_df[pnl_df["line"] == "Revenue"].iloc[0]
-    ebit_row = pnl_df[pnl_df["line"] == "Operating Profit (EBIT)"].iloc[0]
-    revenue = [float(rev_row[p])  for p in forecast_periods]
-    ebit    = [float(ebit_row[p]) for p in forecast_periods]
+    all_periods = sorted(full_df["period"].unique())
+    revenue = []
+    ebit = []
+    for p in all_periods:
+        pdf = full_df[full_df["period"] == p]
+        rev = float(pdf[pdf["line_item"].isin(REVENUE_ITEMS_LOCAL)]["value"].sum())
+        cogs = float(pdf[pdf["line_item"].isin(COGS_ITEMS_LOCAL)]["value"].sum())
+        opex = float(pdf[pdf["line_item"].isin(OPEX_ITEMS_LOCAL)]["value"].sum())
+        revenue.append(rev)
+        ebit.append(rev - cogs - opex)
 
-    ml, mr, mt, mb = 55, 55, 30, 35
+    ml, mr, mt, mb = 55, 55, 30, 40
     plot_w = width - ml - mr
     plot_h = height - mt - mb
-    n = len(forecast_periods)
+    n = len(all_periods)
 
-    rev_max  = max(revenue) * 1.15 if revenue else 1
+    rev_max = max(revenue) * 1.15 if revenue else 1
     ebit_max = max(ebit) * 1.25 if max(ebit) > 0 else 1
 
-    month_names = {"01":"Jan","02":"Feb","03":"Mar","04":"Apr","05":"May","06":"Jun",
-                   "07":"Jul","08":"Aug","09":"Sep","10":"Oct","11":"Nov","12":"Dec"}
+    month_names = {"01": "J", "02": "F", "03": "M", "04": "A",
+                   "05": "M", "06": "J", "07": "J", "08": "A",
+                   "09": "S", "10": "O", "11": "N", "12": "D"}
 
-    d.add(String(width/2, height-16, "Revenue and EBIT by month",
-        fontName="Helvetica-Bold", fontSize=10, fillColor=DARK_BLUE, textAnchor="middle"))
+    d.add(String(width / 2, height - 16,
+        "Revenue and EBIT {} full timeline".format(EM),
+        fontName="Helvetica-Bold", fontSize=10, fillColor=DARK_BLUE,
+        textAnchor="middle"))
 
-    slot  = plot_w / n
-    bar_w = slot * 0.5
+    slot = plot_w / n
+    bar_w = slot * 0.55
+
+    boundary_idx = all_periods.index(last_actual)
+    boundary_x = ml + (boundary_idx + 1) * slot
+
+    d.add(Rect(ml, mb, boundary_x - ml, plot_h,
+               fillColor=colors.HexColor("#F0F6FC"),
+               strokeColor=None, strokeWidth=0))
+    d.add(Line(boundary_x, mb, boundary_x, mb + plot_h,
+               strokeColor=RULE_COLOR, strokeWidth=0.75,
+               strokeDashArray=[3, 3]))
+    mid_a = ml + (boundary_x - ml) / 2
+    mid_f = boundary_x + (ml + plot_w - boundary_x) / 2
+    d.add(String(mid_a, mb + plot_h - 10, "Actuals",
+        fontName="Helvetica", fontSize=7, fillColor=MUTED,
+        textAnchor="middle"))
+    d.add(String(mid_f, mb + plot_h - 10, "Forecast",
+        fontName="Helvetica", fontSize=7, fillColor=MUTED,
+        textAnchor="middle"))
+
     for i, rev in enumerate(revenue):
-        x  = ml + i*slot + (slot-bar_w)/2
+        x = ml + i * slot + (slot - bar_w) / 2
         bh = (rev / rev_max) * plot_h
         d.add(Rect(x, mb, bar_w, bh, fillColor=LIGHT_BLUE,
-            strokeColor=MID_BLUE, strokeWidth=0.75))
+            strokeColor=MID_BLUE, strokeWidth=0.6))
 
     pts = []
     for i, e in enumerate(ebit):
-        x = ml + i*slot + slot/2
+        x = ml + i * slot + slot / 2
         y = mb + (e / ebit_max) * plot_h
         pts.extend([x, y])
     if len(pts) >= 4:
-        d.add(PolyLine(pts, strokeColor=GREEN, strokeWidth=2))
+        d.add(PolyLine(pts, strokeColor=GREEN, strokeWidth=1.8))
     for i, e in enumerate(ebit):
-        x = ml + i*slot + slot/2
+        x = ml + i * slot + slot / 2
         y = mb + (e / ebit_max) * plot_h
-        d.add(Circle(x, y, 2.5, fillColor=GREEN, strokeColor=colors.white, strokeWidth=0.5))
+        d.add(Circle(x, y, 2, fillColor=GREEN,
+            strokeColor=colors.white, strokeWidth=0.5))
 
-    for i, p in enumerate(forecast_periods):
-        x = ml + i*slot + slot/2
-        d.add(String(x, mb-14, month_names.get(p.split("-")[1], p.split("-")[1]),
-            fontName="Helvetica", fontSize=8, fillColor=BODY_DARK, textAnchor="middle"))
+    for i, p in enumerate(all_periods):
+        x = ml + i * slot + slot / 2
+        lbl = month_names.get(p.split("-")[1], "")
+        d.add(String(x, mb - 12, lbl,
+            fontName="Helvetica", fontSize=6, fillColor=BODY_DARK,
+            textAnchor="middle"))
+        if p.endswith("-01") or p == all_periods[0]:
+            d.add(String(x, mb - 21, p[:4],
+                fontName="Helvetica", fontSize=6, fillColor=MUTED,
+                textAnchor="middle"))
 
-    d.add(String(ml-8, height-mt+2, "Revenue", fontName="Helvetica", fontSize=7,
-        fillColor=MID_BLUE, textAnchor="end"))
-    d.add(String(ml-5, mb-2, "0", fontName="Helvetica", fontSize=7, fillColor=MUTED, textAnchor="end"))
-    d.add(String(ml-5, mb+plot_h-4, "{:.1f}M".format(rev_max/1e6),
-        fontName="Helvetica", fontSize=7, fillColor=MUTED, textAnchor="end"))
+    d.add(String(ml - 8, height - mt + 2, "Revenue",
+        fontName="Helvetica", fontSize=7, fillColor=MID_BLUE,
+        textAnchor="end"))
+    d.add(String(ml - 5, mb - 2, "0",
+        fontName="Helvetica", fontSize=7, fillColor=MUTED,
+        textAnchor="end"))
+    d.add(String(ml - 5, mb + plot_h - 4,
+        "{:.1f}M".format(rev_max / 1e6),
+        fontName="Helvetica", fontSize=7, fillColor=MUTED,
+        textAnchor="end"))
 
-    d.add(String(width-mr+8, height-mt+2, "EBIT", fontName="Helvetica", fontSize=7,
-        fillColor=GREEN, textAnchor="start"))
-    d.add(String(width-mr+5, mb-2, "0", fontName="Helvetica", fontSize=7, fillColor=MUTED, textAnchor="start"))
-    d.add(String(width-mr+5, mb+plot_h-4, "{:.0f}k".format(ebit_max/1e3),
-        fontName="Helvetica", fontSize=7, fillColor=MUTED, textAnchor="start"))
+    d.add(String(width - mr + 8, height - mt + 2, "EBIT",
+        fontName="Helvetica", fontSize=7, fillColor=GREEN,
+        textAnchor="start"))
+    d.add(String(width - mr + 5, mb - 2, "0",
+        fontName="Helvetica", fontSize=7, fillColor=MUTED,
+        textAnchor="start"))
+    d.add(String(width - mr + 5, mb + plot_h - 4,
+        "{:.0f}k".format(ebit_max / 1e3),
+        fontName="Helvetica", fontSize=7, fillColor=MUTED,
+        textAnchor="start"))
 
-    d.add(Line(ml, mb, ml, mb+plot_h, strokeColor=RULE_COLOR, strokeWidth=0.5))
-    d.add(Line(width-mr, mb, width-mr, mb+plot_h, strokeColor=RULE_COLOR, strokeWidth=0.5))
-    d.add(Line(ml, mb, width-mr, mb, strokeColor=RULE_COLOR, strokeWidth=0.5))
+    d.add(Line(ml, mb, ml, mb + plot_h,
+        strokeColor=RULE_COLOR, strokeWidth=0.5))
+    d.add(Line(width - mr, mb, width - mr, mb + plot_h,
+        strokeColor=RULE_COLOR, strokeWidth=0.5))
+    d.add(Line(ml, mb, width - mr, mb,
+        strokeColor=RULE_COLOR, strokeWidth=0.5))
 
     return d
 
@@ -618,86 +783,381 @@ def _compact_kpi_table(pnl_df, full_df, forecast_periods):
     return t
 
 
-def write_pdf(commentary, full_df, pnl_df, drivers_df, flags, tok_in, tok_out,
-              last_actual, forecast_periods):
+_PNL_LINES = [
+    ("Revenue",                  REVENUE_ITEMS_LOCAL, False, False),
+    ("COGS",                     COGS_ITEMS_LOCAL,    True,  False),
+    ("Gross Profit",             None,                False, True),
+    ("Personnel Cost",           ["Personnel Cost"],  True,  False),
+    ("Marketing Spend",          ["Marketing Spend"], True,  False),
+    ("IT Infrastructure",        ["IT Infrastructure"], True, False),
+    ("R&D Expense",              ["R&D Expense"],     True,  False),
+    ("Total OpEx",               OPEX_ITEMS_LOCAL,    True,  True),
+    ("Operating Profit (EBIT)",  None,                False, True),
+]
+
+_EXPENSE_NAMES = {"COGS", "Personnel Cost", "Marketing Spend",
+                  "IT Infrastructure", "R&D Expense", "Total OpEx"}
+
+
+def _pnl_summary_styles(pnl_lines, extra=None):
+    """Reusable table-style commands for P&L summary/subtotal lines."""
+    cmds = list(extra or [])
+    for i, (name, _, _, _) in enumerate(pnl_lines, start=1):
+        if name == "Gross Profit":
+            cmds.append(("LINEABOVE", (0, i), (-1, i), 1, DARK_BLUE))
+        elif name == "Total OpEx":
+            cmds.append(("LINEABOVE", (0, i), (-1, i), 1, DARK_BLUE))
+        elif name == "Operating Profit (EBIT)":
+            cmds.append(("LINEABOVE", (0, i), (-1, i), 1.5, DARK_BLUE))
+            cmds.append(("LINEBELOW", (0, i), (-1, i), 1.5, DARK_BLUE))
+            cmds.append(("BACKGROUND", (0, i), (-1, i), LIGHT_BLUE))
+    return cmds
+
+
+def _quarterly_pnl_table(full_df, last_actual, forecast_periods):
+    """P&L by quarter for the forecast year, with (A)ctual / (F)orecast tags."""
+    fcst_year = forecast_periods[0][:4]
+    quarters = [
+        ("Q1", ["{}-01".format(fcst_year), "{}-02".format(fcst_year),
+                "{}-03".format(fcst_year)]),
+        ("Q2", ["{}-04".format(fcst_year), "{}-05".format(fcst_year),
+                "{}-06".format(fcst_year)]),
+        ("Q3", ["{}-07".format(fcst_year), "{}-08".format(fcst_year),
+                "{}-09".format(fcst_year)]),
+        ("Q4", ["{}-10".format(fcst_year), "{}-11".format(fcst_year),
+                "{}-12".format(fcst_year)]),
+    ]
+
+    all_periods = set(full_df["period"].unique())
+
+    def _qsum(items, periods):
+        ps = [p for p in periods if p in all_periods]
+        if not ps:
+            return 0.0
+        return float(full_df[
+            full_df["line_item"].isin(items) &
+            full_df["period"].isin(ps)
+        ]["value"].sum())
+
+    q_kind = {}
+    for q_name, q_periods in quarters:
+        present = [p for p in q_periods if p in all_periods]
+        if not present or max(present) > last_actual:
+            q_kind[q_name] = "F"
+        else:
+            q_kind[q_name] = "A"
+
+    q_vals = {}
+    for q_name, q_periods in quarters:
+        present = [p for p in q_periods if p in all_periods]
+        rev = _qsum(REVENUE_ITEMS_LOCAL, present)
+        cogs = _qsum(COGS_ITEMS_LOCAL, present)
+        gp = rev - cogs
+        opex = _qsum(OPEX_ITEMS_LOCAL, present)
+        ebit = gp - opex
+
+        q_vals.setdefault("Revenue", {})[q_name] = rev
+        q_vals.setdefault("COGS", {})[q_name] = cogs
+        q_vals.setdefault("Gross Profit", {})[q_name] = gp
+        for item in OPEX_ITEMS_LOCAL:
+            q_vals.setdefault(item, {})[q_name] = _qsum([item], present)
+        q_vals.setdefault("Total OpEx", {})[q_name] = opex
+        q_vals.setdefault("Operating Profit (EBIT)", {})[q_name] = ebit
+
+    q_names = [q[0] for q in quarters]
+    col_hdrs = ["{} ({})".format(q, q_kind[q]) for q in q_names]
+    col_hdrs.append("FY {}".format(fcst_year))
+
+    label_col = 3.4 * cm
+    data_col = (PAGE_W - label_col) / 5
+    cw = [label_col] + [data_col] * 5
+
+    header_row = [Paragraph("<b>EUR '000</b>", S_TBL_HDR)]
+    header_row += [Paragraph("<b>{}</b>".format(h), S_TBL_HDR) for h in col_hdrs]
+    rows = [header_row]
+
+    for line_name, items, is_expense, is_summary in _PNL_LINES:
+        vals = q_vals.get(line_name, {})
+        fy = sum(vals.get(q, 0) for q in q_names)
+
+        label = "<b>{}</b>".format(line_name) if is_summary else line_name
+        row = [Paragraph(label, S_TBL)]
+
+        for q in q_names:
+            v = vals.get(q, 0) / 1000
+            if is_expense:
+                text = "({:,.0f})".format(abs(v))
+            else:
+                text = "{:,.0f}".format(v)
+            row.append(Paragraph(text, S_TBL_NUM))
+
+        fy_v = fy / 1000
+        text = "({:,.0f})".format(abs(fy_v)) if is_expense else "{:,.0f}".format(fy_v)
+        row.append(Paragraph(text, S_TBL_NUM))
+        rows.append(row)
+
+    margin_row = [Paragraph("EBIT margin", S_TBL)]
+    rev_q = q_vals.get("Revenue", {})
+    ebit_q = q_vals.get("Operating Profit (EBIT)", {})
+    for q in q_names:
+        r, e = rev_q.get(q, 0), ebit_q.get(q, 0)
+        margin_row.append(Paragraph("{:.1%}".format(e / r if r else 0), S_TBL_NUM))
+    fy_r = sum(rev_q.get(q, 0) for q in q_names)
+    fy_e = sum(ebit_q.get(q, 0) for q in q_names)
+    margin_row.append(Paragraph("{:.1%}".format(fy_e / fy_r if fy_r else 0), S_TBL_NUM))
+    rows.append(margin_row)
+
+    base_style = [
+        ("BACKGROUND",    (0, 0), (-1, 0), TBL_HEADER),
+        ("LINEBELOW",     (0, 0), (-1, 0), 1, MID_BLUE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+        ("LINEBELOW",     (0, 1), (-1, -1), 0.5, RULE_COLOR),
+        ("LINEBEFORE",    (-1, 0), (-1, -1), 0.75, MID_BLUE),
+        ("BACKGROUND",    (-1, 1), (-1, -1), ROW_ALT),
+    ]
+    style_cmds = _pnl_summary_styles(_PNL_LINES, extra=base_style)
+
+    t = Table(rows, colWidths=cw)
+    t.setStyle(TableStyle(style_cmds))
+    return t
+
+
+def _monthly_pnl_table(full_df, last_actual, forecast_periods):
+    """Full P&L by month for the forecast year (Jan to Dec), all line items."""
+    fcst_year = forecast_periods[0][:4]
+    month_nums = ["{:02d}".format(m) for m in range(1, 13)]
+    year_periods = ["{}-{}".format(fcst_year, mn) for mn in month_nums]
+    all_periods = set(full_df["period"].unique())
+
+    mn_short = {"01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr",
+                "05": "May", "06": "Jun", "07": "Jul", "08": "Aug",
+                "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec"}
+
+    def _msum(items, period):
+        if period not in all_periods:
+            return None
+        return float(full_df[
+            full_df["line_item"].isin(items) &
+            (full_df["period"] == period)
+        ]["value"].sum())
+
+    label_col = 2.6 * cm
+    fy_col = 1.4 * cm
+    month_col = (PAGE_W - label_col - fy_col) / 12
+    cw = [label_col] + [month_col] * 12 + [fy_col]
+
+    col_hdrs = []
+    for mn in month_nums:
+        p = "{}-{}".format(fcst_year, mn)
+        kind = "(F)" if p > last_actual else "(A)"
+        col_hdrs.append("{} {}".format(mn_short[mn], kind))
+    col_hdrs.append("FY")
+
+    header_row = [Paragraph("<b>EUR '000</b>", S_TBL_SM_HDR)]
+    header_row += [Paragraph("<b>{}</b>".format(h), S_TBL_SM_HDR)
+                   for h in col_hdrs]
+    rows = [header_row]
+
+    for line_name, items, is_expense, is_summary in _PNL_LINES:
+        if items is None:
+            if line_name == "Gross Profit":
+                dep = (REVENUE_ITEMS_LOCAL, COGS_ITEMS_LOCAL, None)
+            else:
+                dep = (REVENUE_ITEMS_LOCAL, COGS_ITEMS_LOCAL, OPEX_ITEMS_LOCAL)
+        else:
+            dep = None
+
+        label = "<b>{}</b>".format(line_name) if is_summary else line_name
+        row = [Paragraph(label, S_TBL_SM)]
+        fy = 0.0
+
+        for mn in month_nums:
+            p = "{}-{}".format(fcst_year, mn)
+            if dep is not None:
+                rev = _msum(dep[0], p)
+                cogs = _msum(dep[1], p)
+                if rev is None:
+                    row.append(Paragraph(EM, S_TBL_SM_NUM))
+                    continue
+                val = rev - cogs
+                if dep[2] is not None:
+                    val -= (_msum(dep[2], p) or 0)
+            else:
+                val = _msum(items, p)
+                if val is None:
+                    row.append(Paragraph(EM, S_TBL_SM_NUM))
+                    continue
+
+            fy += val
+            v = val / 1000
+            text = "({:,.0f})".format(abs(v)) if is_expense else "{:,.0f}".format(v)
+            row.append(Paragraph(text, S_TBL_SM_NUM))
+
+        fy_v = fy / 1000
+        text = "({:,.0f})".format(abs(fy_v)) if is_expense else "{:,.0f}".format(fy_v)
+        row.append(Paragraph(text, S_TBL_SM_NUM))
+        rows.append(row)
+
+    margin_row = [Paragraph("EBIT margin", S_TBL_SM)]
+    fy_rev_total = 0.0
+    fy_ebit_total = 0.0
+    for mn in month_nums:
+        p = "{}-{}".format(fcst_year, mn)
+        rev = _msum(REVENUE_ITEMS_LOCAL, p)
+        if rev is None:
+            margin_row.append(Paragraph(EM, S_TBL_SM_NUM))
+            continue
+        cogs = _msum(COGS_ITEMS_LOCAL, p) or 0
+        opex = _msum(OPEX_ITEMS_LOCAL, p) or 0
+        ebit = rev - cogs - opex
+        fy_rev_total += rev
+        fy_ebit_total += ebit
+        margin_row.append(Paragraph(
+            "{:.1%}".format(ebit / rev if rev else 0), S_TBL_SM_NUM))
+    margin_row.append(Paragraph(
+        "{:.1%}".format(fy_ebit_total / fy_rev_total if fy_rev_total else 0),
+        S_TBL_SM_NUM))
+    rows.append(margin_row)
+
+    base_style = [
+        ("BACKGROUND",    (0, 0), (-1, 0), TBL_HEADER),
+        ("LINEBELOW",     (0, 0), (-1, 0), 1, MID_BLUE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 3),
+        ("LINEBELOW",     (0, 1), (-1, -1), 0.5, RULE_COLOR),
+        ("LINEBEFORE",    (-1, 0), (-1, -1), 0.75, MID_BLUE),
+        ("BACKGROUND",    (-1, 1), (-1, -1), ROW_ALT),
+    ]
+    style_cmds = _pnl_summary_styles(_PNL_LINES, extra=base_style)
+
+    t = Table(rows, colWidths=cw)
+    t.setStyle(TableStyle(style_cmds))
+    return t
+
+
+def build_pdf_bytes(full_df, pnl_df, drivers_df, flags,
+                    last_actual, forecast_periods,
+                    commentary=None, tok_in=0, tok_out=0,
+                    headcount_df=None, customer_df=None):
+    """Build the forecast PDF and return its bytes.
+
+    Shared builder used by both the CLI (write_pdf) and the web app.
+    When commentary is None the overview, driver commentary, and key-risks
+    sections are omitted, but the report is still valid: P&L, assumptions,
+    chart, audit metadata, and flags.
     """
-    Format the rolling forecast commentary into a professional A4 PDF.
+    import io
 
-    Layout:
-        1. Cover        — entity, last actual, forecast range, metadata
-        2. Overview     — 3-sentence forward-looking summary
-        3. Forecast table — period x line item pivot, forecast rows shaded
-        4. Driver assumptions — compact table of every driver
-        5. Key risks    — Claude's recommendations as bullet points
-        6. Data flags   — same pattern as Project 1
+    ts = datetime.now(timezone.utc).isoformat()
+    has_commentary = commentary is not None
 
-    Args:
-        commentary:       string returned by call_claude()
-        full_df:          DataFrame with actual + forecast rows
-        drivers_df:       DataFrame of driver assumptions
-        flags:            list of validation flag strings
-        tok_in, tok_out:  token counts
-        last_actual:      string — last locked period
-        forecast_periods: list of forecast period strings
-
-    Returns:
-        pdf_path: Path to the written PDF file
-    """
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    now     = datetime.now(timezone.utc)
-    ts_file = now.strftime("%Y-%m-%d_%H-%M-%S")
-    ts_log  = now.isoformat()
-    pdf_path = OUTPUT_DIR / "forecast_commentary_{}.pdf".format(ts_file)
-
-    sections   = parse_forecast_sections(commentary)
-    line_items = full_df["line_item"].unique().tolist()
-    if "Revenue" in line_items:
-        line_items = ["Revenue"] + [li for li in line_items if li != "Revenue"]
+    if has_commentary:
+        sections = parse_forecast_sections(commentary)
+    else:
+        sections = {
+            "forecast_overview": "", "driver_commentary": "",
+            "key_risks": "", "data_flags": "",
+        }
 
     story = []
 
     # 1. Cover
     story.append(_cover_block(
         DEFAULT_ENTITY, last_actual, forecast_periods,
-        ts_log, tok_in, tok_out, len(flags)
+        ts, tok_in, tok_out, len(flags), has_commentary=has_commentary,
     ))
     story.append(Spacer(1, 0.4 * cm))
 
-    # 2. Forecast Overview
-    story.append(_section_header("FORECAST OVERVIEW"))
-    story.append(Spacer(1, 0.2 * cm))
-    if sections["forecast_overview"]:
-        story.append(Paragraph(
-            sections["forecast_overview"].replace("\n", " "), S_BODY
-        ))
-    else:
-        story.append(Paragraph("No overview available.", S_META))
-    story.append(Spacer(1, 0.35 * cm))
+    # 2. Forecast Overview (only with commentary)
+    if has_commentary:
+        story.append(_section_header("FORECAST OVERVIEW"))
+        story.append(Spacer(1, 0.2 * cm))
+        if sections["forecast_overview"]:
+            story.append(Paragraph(
+                sections["forecast_overview"].replace("\n", " "), S_BODY
+            ))
+        else:
+            story.append(Paragraph("No overview available.", S_META))
+        story.append(Spacer(1, 0.35 * cm))
 
-    # 3. Forecast at a glance — chart + compact KPI table
+    # 3. Forecast at a glance — chart + quarterly summary
     story.append(_section_header("FORECAST AT A GLANCE"))
     story.append(Spacer(1, 0.2 * cm))
-    story.append(_kpi_chart(forecast_periods, pnl_df, PAGE_W, 180))
+    story.append(_kpi_chart(full_df, last_actual, forecast_periods,
+                            pnl_df, PAGE_W, 200))
     story.append(Spacer(1, 0.25 * cm))
-    story.append(_compact_kpi_table(pnl_df, full_df, forecast_periods))
+    story.append(_quarterly_pnl_table(full_df, last_actual, forecast_periods))
     story.append(Spacer(1, 0.15 * cm))
+    fcst_year = forecast_periods[0][:4]
     story.append(Paragraph(
-        "Figures in EUR thousands. YTD = actuals booked Jan to Jun 2026. "
-        "YTG = forecast Jul to Dec 2026. FY = full year 2026 (YTD plus YTG). "
-        "Full detailed P&L in the CSV export.",
+        "Figures in EUR thousands. (A) = actuals, (F) = forecast. "
+        "FY {} = full calendar year.".format(fcst_year),
         S_META
     ))
     story.append(Spacer(1, 0.35 * cm))
 
-    # 4. Driver Assumptions
+    # 4. Detailed monthly P&L
+    story.append(_section_header("DETAILED P&L {} MONTHLY".format(EM)))
+    story.append(Spacer(1, 0.2 * cm))
+    story.append(_monthly_pnl_table(full_df, last_actual, forecast_periods))
+    story.append(Spacer(1, 0.15 * cm))
+    story.append(Paragraph(
+        "Figures in EUR thousands. Expense lines shown in brackets. "
+        "Months marked (A) are booked actuals; (F) are model forecast.",
+        S_META
+    ))
+    story.append(Spacer(1, 0.35 * cm))
+
+    # 5. Forecast summary — compact KPI table
+    story.append(_section_header("FORECAST SUMMARY"))
+    story.append(Spacer(1, 0.2 * cm))
+    story.append(_compact_kpi_table(pnl_df, full_df, forecast_periods))
+    story.append(Spacer(1, 0.15 * cm))
+    story.append(Paragraph(
+        "YTD = actuals booked so far this year. "
+        "YTG = forecast remaining. FY = full year (YTD plus YTG).",
+        S_META
+    ))
+    story.append(Spacer(1, 0.35 * cm))
+
+    # 6. Driver Assumptions
     story.append(_section_header("DRIVER ASSUMPTIONS"))
     story.append(Spacer(1, 0.2 * cm))
     story.append(_driver_table(drivers_df))
     story.append(Spacer(1, 0.35 * cm))
 
-    # 5. Driver Commentary (from Claude, one paragraph per line item)
-    if sections["driver_commentary"]:
+    # 6b. Operational Inputs (headcount + customer targets)
+    if headcount_df is not None or customer_df is not None:
+        story.append(_section_header("OPERATIONAL INPUTS"))
+        story.append(Spacer(1, 0.2 * cm))
+        if headcount_df is not None:
+            story.append(Paragraph(
+                "<b>Headcount schedule</b> (drives Personnel Cost)",
+                S_TBL))
+            story.append(Spacer(1, 0.1 * cm))
+            story.append(_headcount_schedule_table(headcount_df))
+            story.append(Spacer(1, 0.25 * cm))
+        if customer_df is not None:
+            story.append(Paragraph(
+                "<b>Customer acquisition targets</b> (drives Marketing Spend)",
+                S_TBL))
+            story.append(Spacer(1, 0.1 * cm))
+            story.append(_customer_targets_table(customer_df))
+            story.append(Spacer(1, 0.15 * cm))
+        story.append(Paragraph(
+            "Personnel Cost = (starting headcount + cumulative net hires) "
+            "x cost per head / 12. "
+            "Marketing Spend = (new customers x CAC) + fixed campaign budget.",
+            S_META))
+        story.append(Spacer(1, 0.35 * cm))
+
+    # 7. Driver Commentary (only with commentary)
+    if has_commentary and sections["driver_commentary"]:
         story.append(_section_header("DRIVER COMMENTARY"))
         story.append(Spacer(1, 0.2 * cm))
         for line in sections["driver_commentary"].split("\n"):
@@ -708,21 +1168,22 @@ def write_pdf(commentary, full_df, pnl_df, drivers_df, flags, tok_in, tok_out,
             story.append(Spacer(1, 0.15 * cm))
         story.append(Spacer(1, 0.35 * cm))
 
-    # 6. Key Risks
-    story.append(_section_header("KEY RISKS AND RECOMMENDATIONS"))
-    story.append(Spacer(1, 0.2 * cm))
-    if sections["key_risks"]:
-        for line in sections["key_risks"].split("\n"):
-            line = line.strip().lstrip("-").strip()
-            if not line:
-                continue
-            story.append(Paragraph("&#8226; " + line, S_BODY))
-            story.append(Spacer(1, 0.15 * cm))
-    else:
-        story.append(Paragraph("No specific risks flagged.", S_META))
-    story.append(Spacer(1, 0.35 * cm))
+    # 8. Key Risks (only with commentary)
+    if has_commentary:
+        story.append(_section_header("KEY RISKS AND RECOMMENDATIONS"))
+        story.append(Spacer(1, 0.2 * cm))
+        if sections["key_risks"]:
+            for line in sections["key_risks"].split("\n"):
+                line = line.strip().lstrip("-").strip()
+                if not line:
+                    continue
+                story.append(Paragraph("&#8226; " + line, S_BODY))
+                story.append(Spacer(1, 0.15 * cm))
+        else:
+            story.append(Paragraph("No specific risks flagged.", S_META))
+        story.append(Spacer(1, 0.35 * cm))
 
-    # 7. Data Flags
+    # 9. Data Flags
     story.append(_section_header("DATA FLAGS"))
     story.append(Spacer(1, 0.2 * cm))
     if flags:
@@ -735,51 +1196,72 @@ def write_pdf(commentary, full_df, pnl_df, drivers_df, flags, tok_in, tok_out,
     # Footer
     story.append(HRFlowable(width="100%", thickness=0.5, color=RULE_COLOR))
     story.append(Spacer(1, 0.15 * cm))
+    review_note = ("Required, {} flag(s)".format(len(flags)) if flags
+                   else "Not required")
     story.append(Paragraph(
         "AI Driver-Based Rolling Forecast Pipeline  ·  {}  ·  {}  ·  "
-        "Human review: {}".format(
-            MODEL, ts_log[:10],
-            "Required — {} flag(s)".format(len(flags)) if flags else "Not required"
-        ),
+        "Human review: {}".format(MODEL, ts[:10], review_note),
         S_META
     ))
 
+    buf = io.BytesIO()
     doc = SimpleDocTemplate(
-        str(pdf_path),
+        buf,
         pagesize=A4,
-        rightMargin=2 * cm,
-        leftMargin=2 * cm,
-        topMargin=2 * cm,
-        bottomMargin=2 * cm,
+        rightMargin=2 * cm, leftMargin=2 * cm,
+        topMargin=2 * cm, bottomMargin=2 * cm,
         title="Rolling Forecast - {} to {}".format(
             forecast_periods[0], forecast_periods[-1]),
         author="AI Driver-Based Rolling Forecast Pipeline",
     )
     doc.build(story)
+    return buf.getvalue()
 
+
+def build_csv_bytes(pnl_df):
+    """Return the P&L DataFrame as CSV bytes.
+
+    Shared builder used by both the CLI (export_pnl_csv) and the web app,
+    so the CSV columns match exactly.
+    """
+    return pnl_df.to_csv(index=False).encode("utf-8")
+
+
+def write_pdf(commentary, full_df, pnl_df, drivers_df, flags, tok_in, tok_out,
+              last_actual, forecast_periods):
+    """Write the forecast PDF to disk (CLI entry point).
+
+    Delegates to build_pdf_bytes for the shared story, then writes the
+    file and updates the audit log.
+    """
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    ts_file  = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    pdf_path = OUTPUT_DIR / "forecast_commentary_{}.pdf".format(ts_file)
+
+    pdf_bytes = build_pdf_bytes(
+        full_df, pnl_df, drivers_df, flags,
+        last_actual, forecast_periods,
+        commentary=commentary, tok_in=tok_in, tok_out=tok_out,
+    )
+    pdf_path.write_bytes(pdf_bytes)
     update_audit_pdf(pdf_path)
 
     print("[OK] PDF written")
     print("     PDF:  {}".format(pdf_path))
     print("     Size: {:.1f} KB".format(pdf_path.stat().st_size / 1024))
-
     return pdf_path
 
 
 def export_pnl_csv(pnl_df, full_df, forecast_periods):
-    """
-    Export the full detailed P&L to CSV — all nine lines, every period,
-    plus a total column. This is the complete detail that no longer
-    clutters the PDF.
+    """Export the P&L to a timestamped CSV on disk (CLI entry point).
+
+    Delegates to build_csv_bytes for the shared content.
     """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    now      = datetime.now(timezone.utc)
-    ts_file  = now.strftime("%Y-%m-%d_%H-%M-%S")
+    ts_file  = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
     csv_path = OUTPUT_DIR / "forecast_pnl_{}.csv".format(ts_file)
 
-    pnl_df.to_csv(csv_path, index=False)
-
-    # Record the CSV path in the audit trail
+    csv_path.write_bytes(build_csv_bytes(pnl_df))
     update_audit_csv(csv_path)
 
     print("[OK] P&L CSV exported")

@@ -9,14 +9,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-if not ANTHROPIC_API_KEY:
-    raise ValueError(
-        "ANTHROPIC_API_KEY not found. "
-        "Check that .env exists in the project root."
-    )
 
 MODEL      = "claude-sonnet-4-6"
 MAX_TOKENS = 2048
+
+COST_INPUT_USD_PER_MTOK  = 3.00
+COST_OUTPUT_USD_PER_MTOK = 15.00
+ASSUMED_USD_PER_EUR = 1.08
+
+CURRENCY_CODE   = "EUR"
+CURRENCY_SYMBOL = "€"
 
 BASE_DIR   = Path(__file__).parent
 DATA_DIR   = BASE_DIR / "data"

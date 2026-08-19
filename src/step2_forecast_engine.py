@@ -212,9 +212,16 @@ def _forecast_cac_driven(customer_df, forecast_periods):
     return forecast, detail
 
 
+_SPECIAL_METHOD_NATIVE_LINE = {
+    "headcount_driven": "Personnel Cost",
+    "cac_driven":       "Marketing Spend",
+}
+
+
 def calculate_forecast(actuals_df, drivers_df, operational_df,
                        headcount_df, customer_df,
-                       last_actual, forecast_periods, seasonal_year):
+                       last_actual, forecast_periods, seasonal_year,
+                       driver_overrides=None):
     """
     Calculate the full forecast by applying each line item's driver.
 
@@ -230,6 +237,7 @@ def calculate_forecast(actuals_df, drivers_df, operational_df,
         last_actual:      last locked period string
         forecast_periods: list of forecast period strings
         seasonal_year:    the calendar year to derive seasonality from
+        driver_overrides: optional {line: {"method": str, "value": float}}
 
     Returns:
         full_df:      DataFrame (period, line_item, value, type)
@@ -242,6 +250,22 @@ def calculate_forecast(actuals_df, drivers_df, operational_df,
             "driver_type":  row["driver_type"],
             "driver_value": row["driver_value"],
         }
+
+    if driver_overrides:
+        for li, ov in driver_overrides.items():
+            method = ov["method"]
+            if method in _SPECIAL_METHOD_NATIVE_LINE:
+                native = _SPECIAL_METHOD_NATIVE_LINE[method]
+                if li != native:
+                    raise ValueError(
+                        "Cannot apply '{}' to '{}': that method is only "
+                        "valid on its native line '{}'.".format(
+                            method, li, native)
+                    )
+            driver_lookup[li] = {
+                "driver_type":  method,
+                "driver_value": ov["value"],
+            }
 
     # Revenue first — COGS depends on it
     line_items = actuals_df["line_item"].unique().tolist()

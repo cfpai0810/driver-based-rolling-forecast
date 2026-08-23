@@ -300,7 +300,7 @@ Python 3.11 · pandas · Anthropic Claude API · python-dotenv · reportlab
 | 2 | Driver-Based Rolling Forecast | This project |
 | 3 | Anomaly Detection and Alert Agent | Complete |
 | 4 | NL Scenario Modelling Copilot | Complete |
-| 5 | Budget Challenge Assistant | Planned |
+| 5 | Reconciliation and Tie-Out Assistant | Planned |
 | 6 | Agentic Board Pack Generator | Planned |
 | 7 | Planning-to-Warehouse-to-LLM Pipeline | Planned |
 | 8 | 13-Week Cash Flow Forecasting Agent | Planned |

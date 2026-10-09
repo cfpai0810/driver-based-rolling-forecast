@@ -1,5 +1,5 @@
 # =============================================================================
-# main.py — Project 2: Driver-Based Rolling Forecast Pipeline
+# main.py: Project 2: Driver-Based Rolling Forecast Pipeline
 # Pass 2: four-layer architecture (all steps extracted)
 # =============================================================================
 

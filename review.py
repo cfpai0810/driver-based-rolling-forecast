@@ -1,5 +1,5 @@
 # =============================================================================
-# review.py — Mark the most recent forecast run as human-reviewed
+# review.py: Mark the most recent forecast run as human-reviewed
 # =============================================================================
 # Usage:
 #   python review.py

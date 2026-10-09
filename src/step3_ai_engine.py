@@ -1,5 +1,5 @@
 # =============================================================================
-# step3_ai_engine.py — Layer 4: AI Prompt Construction and API Call
+# step3_ai_engine.py: Layer 4: AI Prompt Construction and API Call
 # =============================================================================
 # Responsibilities:
 #   - build_prompt():  construct system + user prompts for Claude

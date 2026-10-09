@@ -1,5 +1,5 @@
 # =============================================================================
-# tests/test_pipeline.py — Project 2: Driver-Based Rolling Forecast Pipeline
+# tests/test_pipeline.py: Project 2: Driver-Based Rolling Forecast Pipeline
 # =============================================================================
 # Phase 5: VALIDATE
 #

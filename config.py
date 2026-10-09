@@ -1,5 +1,5 @@
 # ================================================================
-# config.py — Layer 1: All configuration for Project 2
+# config.py: Layer 1: All configuration for Project 2
 # ================================================================
 
 import os

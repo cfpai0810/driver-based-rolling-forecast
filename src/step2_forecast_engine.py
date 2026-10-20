@@ -362,6 +362,10 @@ def calculate_forecast(actuals_df, drivers_df, operational_df,
                     continue
 
                 value_lookup[(period, line_item)] = forecast_value
+                if line_item == "Revenue":
+                    # Revenue on a period-by-period driver is only known now;
+                    # the lines after it this period (COGS margin) need it
+                    revenue_this_period = forecast_value
 
             # ── Sanity checks ──────────────────────────────────────────────
             if forecast_value < 0:

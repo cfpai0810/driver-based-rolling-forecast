@@ -151,9 +151,10 @@ def _kpi_row_html(title, cards_data):
         if sub:
             sub_html = ('<div style="font-size:0.78rem;margin-top:2px">'
                         '{}</div>').format(sub)
+        # Tiles share a row on wide screens and stack on a phone
         cards.append(
-            '<div style="flex:1;background:{};border-left:4px solid {};'
-            'border-radius:8px;padding:14px 18px">'
+            '<div style="flex:1 1 180px;min-width:0;background:{};'
+            'border-left:4px solid {};border-radius:8px;padding:14px 18px">'
             '<div style="font-size:0.72rem;color:{};font-weight:600;'
             'letter-spacing:0.05em;text-transform:uppercase">{}</div>'
             '<div style="font-size:1.4rem;font-weight:700;color:{};'
@@ -165,7 +166,7 @@ def _kpi_row_html(title, cards_data):
         '<div style="margin-bottom:10px">'
         '<div style="font-size:0.82rem;font-weight:600;color:{};'
         'margin-bottom:8px">{}</div>'
-        '<div style="display:flex;gap:12px">{}</div>'
+        '<div style="display:flex;flex-wrap:wrap;gap:12px">{}</div>'
         '</div>'.format(DARK_BLUE, title, "".join(cards))
     )
 
@@ -772,23 +773,29 @@ _dl_drivers = _effective_drivers(_load_data()[1], _cur_overrides)
 _dl_commentary = st.session_state.get("_commentary_text")
 _dl_tok = st.session_state.get("_commentary_cost", (0, 0))
 
-_pdf_bytes = build_pdf_bytes(
-    full_df, pnl_df, _dl_drivers, flags,
-    last_actual, forecast_periods,
-    commentary=_dl_commentary,
-    tok_in=_dl_tok[0], tok_out=_dl_tok[1],
-    headcount_df=_headcount_df, customer_df=_customer_df,
-)
+try:
+    _pdf_bytes = build_pdf_bytes(
+        full_df, pnl_df, _dl_drivers, flags,
+        last_actual, forecast_periods,
+        commentary=_dl_commentary,
+        tok_in=_dl_tok[0], tok_out=_dl_tok[1],
+        headcount_df=_headcount_df, customer_df=_customer_df,
+    )
+except Exception as exc:
+    # A PDF that cannot be built must not take the CSV download with it
+    _pdf_bytes = None
+    st.error("The PDF report could not be built. " + friendly_message(exc))
 _csv_bytes = build_csv_bytes(pnl_df)
 
 _dc1, _dc2, _ = st.columns([2, 2, 5])
 with _dc1:
-    st.download_button(
-        "Download PDF", data=_pdf_bytes,
-        file_name="forecast_report.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-    )
+    if _pdf_bytes is not None:
+        st.download_button(
+            "Download PDF", data=_pdf_bytes,
+            file_name="forecast_report.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
 with _dc2:
     st.download_button(
         "Download CSV", data=_csv_bytes,

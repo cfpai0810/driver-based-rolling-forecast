@@ -81,7 +81,14 @@ S_TBL_SM_HDR = ParagraphStyle("TblSmHdr", fontName="Helvetica-Bold", fontSize=7,
 S_TBL_SM_NUM = ParagraphStyle("TblSmNum", fontName="Helvetica",      fontSize=7,
                 textColor=BODY_DARK, leading=9, alignment=TA_RIGHT)
 
-EM = "—"   # em dash
+NO_VALUE = "n/a"   # shown in a table cell that has no figure
+
+
+def pdf_text(text):
+    """Escape text for a reportlab Paragraph: & first, then < and >, so data,
+    model and reviewer text prints as written (R&D, P&L, a stray <)."""
+    return (str(text).replace("&", "&amp;")
+            .replace("<", "&lt;").replace(">", "&gt;"))
 
 
 def compute_data_hashes():
@@ -117,7 +124,7 @@ def check_requires_review(flags, stop_reason=None, tok_out=0,
 
 def clean_markdown(text):
     """Convert Claude markdown to ReportLab-safe XML."""
-    text = text.replace("&", "&amp;")
+    text = pdf_text(text)
     text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
     text = re.sub(r'^#{1,3}\s*', '', text, flags=re.MULTILINE)
     text = re.sub(r'^---+\s*$',   '', text, flags=re.MULTILINE)
@@ -175,18 +182,18 @@ def _cover_block(entity, last_actual, forecast_periods, ts,
         meta = 'Generated {}  ·  {} flag(s)'.format(ts[:10], nflags)
     rows = [
         [Paragraph(
-            '<font color="white"><b>ROLLING FORECAST — {} TO {}</b></font>'.format(
-                forecast_periods[0], forecast_periods[-1]),
+            '<font color="white"><b>ROLLING FORECAST: {} TO {}</b></font>'.format(
+                pdf_text(forecast_periods[0]), pdf_text(forecast_periods[-1])),
             ParagraphStyle("CT", fontName="Helvetica-Bold", fontSize=16,
                 textColor=colors.white, alignment=TA_CENTER)
         )],
         [Paragraph(
-            '<font color="#AACCEE">{}</font>'.format(subtitle),
+            '<font color="#AACCEE">{}</font>'.format(pdf_text(subtitle)),
             ParagraphStyle("CS", fontName="Helvetica", fontSize=9,
                 textColor=colors.HexColor("#AACCEE"), alignment=TA_CENTER)
         )],
         [Paragraph(
-            '<font color="#6699BB">{}</font>'.format(meta),
+            '<font color="#6699BB">{}</font>'.format(pdf_text(meta)),
             ParagraphStyle("CM", fontName="Helvetica", fontSize=8,
                 textColor=colors.HexColor("#6699BB"), alignment=TA_CENTER)
         )],
@@ -209,7 +216,7 @@ def _cover_block(entity, last_actual, forecast_periods, ts,
 def _section_header(title):
     """Full-width mid-blue section header band."""
     t = Table([[Paragraph(
-        '<font color="white"><b>{}</b></font>'.format(title),
+        '<font color="white"><b>{}</b></font>'.format(pdf_text(title)),
         ParagraphStyle("SH", fontName="Helvetica-Bold", fontSize=11,
             textColor=colors.white, leading=14)
     )]], colWidths=[PAGE_W])
@@ -244,19 +251,20 @@ def _forecast_table(full_df, line_items):
         "R&D Expense":       "R&D",
     }
     headers = ["Period"] + [short_names.get(li, li) for li in line_items]
-    header_row = [Paragraph("<b>{}</b>".format(h), S_TBL_HDR) for h in headers]
+    header_row = [Paragraph("<b>{}</b>".format(pdf_text(h)), S_TBL_HDR)
+                  for h in headers]
     table_rows = [header_row]
 
     for period in all_periods:
         period_data = full_df[full_df["period"] == period]
         ptype = period_data["type"].iloc[0]
         label = "{} {}".format(period, "A" if ptype == "actual" else "F")
-        row_cells = [Paragraph(label, S_TBL)]
+        row_cells = [Paragraph(pdf_text(label), S_TBL)]
         for li in line_items:
             match = period_data[period_data["line_item"] == li]
             val   = match["value"].iloc[0] if len(match) else None
             row_cells.append(Paragraph(
-                "{:,.0f}".format(val) if val is not None else EM,
+                "{:,.0f}".format(val) if val is not None else NO_VALUE,
                 S_TBL_NUM
             ))
         table_rows.append(row_cells)
@@ -294,16 +302,16 @@ def _driver_table(drivers_df):
     for _, row in drivers_df.iterrows():
         dtype = row["driver_type"]
         dval  = row["driver_value"]
-        if dtype in ("growth_pct", "margin_pct", "fixed_growth"):
+        if dtype in ("seasonal_yoy", "growth_pct", "margin_pct", "fixed_growth"):
             val_str = "{:.1%}".format(dval)
         else:
             val_str = "EUR {:,.0f}".format(dval)
         note = row.get("note", "") if "note" in row.index else ""
         rows.append([
-            Paragraph(row["line_item"], S_TBL),
-            Paragraph(dtype,            S_TBL),
-            Paragraph(val_str,          S_TBL_NUM),
-            Paragraph(note,             S_TBL),
+            Paragraph(pdf_text(row["line_item"]), S_TBL),
+            Paragraph(pdf_text(dtype),            S_TBL),
+            Paragraph(pdf_text(val_str),          S_TBL_NUM),
+            Paragraph(pdf_text(note),             S_TBL),
         ])
     style = [
         ("BACKGROUND",    (0, 0), (-1, 0),  TBL_HEADER),
@@ -407,7 +415,7 @@ def _flag_box(text, severity="error"):
     bg = FLAG_BG  if severity == "error" else AMBER_BG
     tc = FLAG_RED if severity == "error" else AMBER
     t = Table([[Paragraph(
-        '<b>[!]</b>  {}'.format(text),
+        '<b>[!]</b>  {}'.format(pdf_text(text)),
         ParagraphStyle("FB", fontName="Helvetica", fontSize=9,
             textColor=tc, leading=13)
     )]], colWidths=[PAGE_W])
@@ -589,7 +597,7 @@ def _kpi_chart(full_df, last_actual, forecast_periods, pnl_df, width, height):
                    "09": "S", "10": "O", "11": "N", "12": "D"}
 
     d.add(String(width / 2, height - 16,
-        "Revenue and EBIT {} full timeline".format(EM),
+        "Revenue and EBIT, full timeline",
         fontName="Helvetica-Bold", fontSize=10, fillColor=DARK_BLUE,
         textAnchor="middle"))
 
@@ -880,7 +888,8 @@ def _quarterly_pnl_table(full_df, last_actual, forecast_periods):
         vals = q_vals.get(line_name, {})
         fy = sum(vals.get(q, 0) for q in q_names)
 
-        label = "<b>{}</b>".format(line_name) if is_summary else line_name
+        label = ("<b>{}</b>".format(pdf_text(line_name)) if is_summary
+                 else pdf_text(line_name))
         row = [Paragraph(label, S_TBL)]
 
         for q in q_names:
@@ -970,7 +979,8 @@ def _monthly_pnl_table(full_df, last_actual, forecast_periods):
         else:
             dep = None
 
-        label = "<b>{}</b>".format(line_name) if is_summary else line_name
+        label = ("<b>{}</b>".format(pdf_text(line_name)) if is_summary
+                 else pdf_text(line_name))
         row = [Paragraph(label, S_TBL_SM)]
         fy = 0.0
 
@@ -980,7 +990,7 @@ def _monthly_pnl_table(full_df, last_actual, forecast_periods):
                 rev = _msum(dep[0], p)
                 cogs = _msum(dep[1], p)
                 if rev is None:
-                    row.append(Paragraph(EM, S_TBL_SM_NUM))
+                    row.append(Paragraph(NO_VALUE, S_TBL_SM_NUM))
                     continue
                 val = rev - cogs
                 if dep[2] is not None:
@@ -988,7 +998,7 @@ def _monthly_pnl_table(full_df, last_actual, forecast_periods):
             else:
                 val = _msum(items, p)
                 if val is None:
-                    row.append(Paragraph(EM, S_TBL_SM_NUM))
+                    row.append(Paragraph(NO_VALUE, S_TBL_SM_NUM))
                     continue
 
             fy += val
@@ -1008,7 +1018,7 @@ def _monthly_pnl_table(full_df, last_actual, forecast_periods):
         p = "{}-{}".format(fcst_year, mn)
         rev = _msum(REVENUE_ITEMS_LOCAL, p)
         if rev is None:
-            margin_row.append(Paragraph(EM, S_TBL_SM_NUM))
+            margin_row.append(Paragraph(NO_VALUE, S_TBL_SM_NUM))
             continue
         cogs = _msum(COGS_ITEMS_LOCAL, p) or 0
         opex = _msum(OPEX_ITEMS_LOCAL, p) or 0
@@ -1102,7 +1112,7 @@ def build_pdf_bytes(full_df, pnl_df, drivers_df, flags,
     story.append(Spacer(1, 0.35 * cm))
 
     # 4. Detailed monthly P&L
-    story.append(_section_header("DETAILED P&L {} MONTHLY".format(EM)))
+    story.append(_section_header("DETAILED MONTHLY P&L"))
     story.append(Spacer(1, 0.2 * cm))
     story.append(_monthly_pnl_table(full_df, last_actual, forecast_periods))
     story.append(Spacer(1, 0.15 * cm))

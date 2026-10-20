@@ -117,7 +117,7 @@ st.set_page_config(
     page_title="Driver-Based Rolling Forecast",
     page_icon="•",
     layout="centered",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 PAGES_DIR = Path(__file__).resolve().parent / "pages"

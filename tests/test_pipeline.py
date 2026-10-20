@@ -1285,3 +1285,148 @@ class TestStep2KeyGateAndErrors:
         assert not at.exception
         assert at.sidebar.text_input(key="byo_api_key").value == TEST_KEY
         assert at.session_state["live_client"] is not None
+
+
+# =====================================================================
+# Step 2 fixes, bundle 2: growth revenue keeps COGS, PDF text, CLI cost
+# currency, KPI tiles at phone width, sidebar state on arrival
+# =====================================================================
+
+def _pdf_drawn_text(pdf):
+    """The text-drawing operators of a reportlab PDF, inflated (stdlib only)."""
+    import base64
+    import re
+    import zlib
+    parts = []
+    for raw in re.findall(rb"stream\r?\n(.*?)endstream", pdf, re.S):
+        data = raw.strip()
+        if data.endswith(b"~>"):
+            data = data[:-2]
+        try:
+            parts.append(zlib.decompress(base64.a85decode(data)).decode("latin-1"))
+        except Exception:
+            continue
+    # reportlab draws a character that came from an entity (the & of R&D) as
+    # its own string; join neighbouring strings so words read whole
+    return re.sub(r"\)\s*Tj\s*\(", "", "\n".join(parts))
+
+
+class TestStep2ForecastAndOutputs:
+    """Items 5, 28, 35, 57, 30 and 53."""
+
+    def test_item5_growth_revenue_keeps_cogs(self, actuals_df, drivers_df,
+                                             operational_df, headcount_df,
+                                             customer_df, last_actual,
+                                             forecast_periods, seasonal_year):
+        overrides = {"Revenue": {"method": "growth_pct", "value": 0.02}}
+        full, _, flags = calculate_forecast(
+            actuals_df, drivers_df, operational_df, headcount_df,
+            customer_df, last_actual, forecast_periods, seasonal_year,
+            driver_overrides=overrides,
+        )
+        assert not [f for f in flags if f.startswith("CALCULATION_ORDER")]
+        pnl = build_pnl(full, forecast_periods).set_index("line")
+        cogs_ratio = float(drivers_df.loc[
+            drivers_df["line_item"] == "COGS", "driver_value"].iloc[0])
+        for p in forecast_periods:
+            revenue = pnl.loc["Revenue", p]
+            assert revenue > 0
+            assert pnl.loc["COGS", p] > 0
+            assert pnl.loc["Gross Profit", p] / revenue == pytest.approx(
+                1 - cogs_ratio, abs=1e-6)
+
+    def test_item28_model_text_with_markup_characters_builds_a_pdf(
+            self, full_df, pnl_df, drivers_df, flags, last_actual,
+            forecast_periods):
+        from src.step4_output_writer import build_pdf_bytes
+        commentary = (
+            "FORECAST OVERVIEW\nMargin < 60% & falling; see <b and R&D.\n\n"
+            "DRIVER COMMENTARY\n**Revenue:** growth <b>bold</b> & more < less.\n\n"
+            "KEY RISKS AND RECOMMENDATIONS\n- **P&L** risk < 5% > 2%.\n\n"
+            "DATA FLAGS\nNo flags raised."
+        )
+        pdf = build_pdf_bytes(
+            full_df, pnl_df, drivers_df, ["NEGATIVE_VALUE: R&D Expense <test>"],
+            last_actual, forecast_periods, commentary=commentary,
+            tok_in=1742, tok_out=612,
+        )
+        assert pdf[:5] == b"%PDF-"
+        text = _pdf_drawn_text(pdf)
+        assert "R&D Expense" in text
+        assert "R&D;" not in text and "P&L;" not in text
+        assert "<b and R&D." in text
+
+    def test_item28_pdf_text_helper_escapes_ampersand_first(self):
+        from src.step4_output_writer import pdf_text
+        assert pdf_text("R&D <b> & P&L >") == (
+            "R&amp;D &lt;b&gt; &amp; P&amp;L &gt;")
+
+    def test_item28_pdf_has_no_dashes_and_reads_r_and_d(
+            self, full_df, pnl_df, drivers_df, flags, last_actual,
+            forecast_periods, headcount_df, customer_df):
+        from src.step4_output_writer import build_pdf_bytes
+        pdf = build_pdf_bytes(
+            full_df, pnl_df, drivers_df, flags, last_actual, forecast_periods,
+            headcount_df=headcount_df, customer_df=customer_df,
+        )
+        text = _pdf_drawn_text(pdf)
+        assert "R&D;" not in text and "P&L;" not in text
+        assert "DETAILED MONTHLY P&L" in text
+        assert "Revenue and EBIT, full timeline" in text
+        assert "ROLLING FORECAST: " in text
+        # no em or en dash drawn, in any of the forms reportlab can write one
+        for dash in ("\\227", "\\226", "\x97", "\x96", "\N{EM DASH}", "\N{EN DASH}"):
+            assert dash not in text
+
+    def test_item35_growth_driver_shows_as_a_percentage(self, drivers_df):
+        from src.step4_output_writer import _driver_table
+        table = _driver_table(drivers_df)
+        cells = {row[0].text: row[2].text for row in table._cellvalues[1:]}
+        assert cells["Revenue"] == "12.0%"
+        assert cells["R&amp;D Expense"] == "6.0%"
+
+    def test_item35_web_pdf_failure_keeps_the_csv(self):
+        at = _app("pages/forecast.py")
+        with patch("src.step4_output_writer.build_pdf_bytes",
+                   side_effect=RuntimeError("stand-in failure")):
+            at.run()
+        assert not at.exception
+        shown = [e.value for e in at.error]
+        assert len(shown) == 1 and shown[0].startswith(
+            "The PDF report could not be built.")
+        assert "RuntimeError" not in shown[0] and "stand-in" not in shown[0]
+        labels = [d.proto.label for d in at.get("download_button")]
+        assert labels == ["Download CSV"]
+
+    def test_item57_cli_cost_line_names_the_currency_it_computes(self, capsys):
+        from types import SimpleNamespace
+        import src.step3_ai_engine as engine
+        reply = SimpleNamespace(
+            content=[SimpleNamespace(text="FORECAST OVERVIEW\nStand-in.")],
+            usage=SimpleNamespace(input_tokens=1_000_000, output_tokens=0),
+            stop_reason="end_turn",
+        )
+        with patch.object(engine, "client", _StandInClient(reply=reply)):
+            engine.call_claude("system", "user")
+        line = next(l for l in capsys.readouterr().out.splitlines()
+                    if "Approx cost" in l)
+        # one million input tokens at USD 3 per million
+        assert line.split(":", 1)[1].split() == ["USD", "3.0000"]
+
+    def test_item30_kpi_tiles_wrap_at_phone_width(self):
+        at = _app("pages/forecast.py")
+        at.run()
+        rows = [m.value for m in at.markdown if "display:flex" in m.value]
+        assert len(rows) == 2
+        for html in rows:
+            assert "display:flex;flex-wrap:wrap" in html
+            assert html.count("flex:1 1 180px;min-width:0") == 3
+
+    def test_item53_sidebar_state_is_auto(self):
+        import ast
+        tree = ast.parse((APP_DIR / "Home.py").read_text(encoding="utf-8"))
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                 and getattr(n.func, "attr", "") == "set_page_config"]
+        assert len(calls) == 1
+        kwargs = {k.arg: ast.literal_eval(k.value) for k in calls[0].keywords}
+        assert kwargs["initial_sidebar_state"] == "auto"

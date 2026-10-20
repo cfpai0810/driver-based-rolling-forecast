@@ -258,7 +258,7 @@ def call_claude(system_prompt, user_prompt):
     print("     Stop reason:   {}".format(stop_reason))
     print("     Input tokens:  {:,}".format(input_tokens))
     print("     Output tokens: {:,}".format(output_tokens))
-    print("     Approx cost:   EUR {:.4f}".format(approx_cost))
+    print("     Approx cost:   USD {:.4f}".format(approx_cost))
     print("\n{}".format("=" * 60))
     print("ROLLING FORECAST COMMENTARY — {}".format(DEFAULT_ENTITY))
     print("{}".format("=" * 60))

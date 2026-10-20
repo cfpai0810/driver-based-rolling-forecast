@@ -36,8 +36,9 @@ def _home_page():
     )
 
     # The committed worked example needs no key: it is the "View a worked
-    # example" tab on the Forecast page
+    # example" tab on the Forecast page, which this flag opens
     if st.button("See the worked example"):
+        st.session_state[OPEN_EXAMPLE_TAB] = True
         st.switch_page(FORECAST_PAGE)
 
     components.html(governance_flow_svg(), height=220, scrolling=False)
@@ -132,6 +133,8 @@ st.session_state["live_client"] = client
 
 FORECAST_PAGE = st.Page(str(PAGES_DIR / "forecast.py"),
                         title="Forecast", icon=":material/trending_up:")
+# Set by the Home button so the Forecast page opens on its example tab
+OPEN_EXAMPLE_TAB = "forecast_open_example"
 
 pg = st.navigation([
     st.Page(_home_page, title="Home", icon=":material/home:"),

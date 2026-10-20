@@ -1504,3 +1504,45 @@ class TestStep2HomeAndTheme:
         assert len(rows) == 2
         for html in rows:
             assert html.count('class="sc-kpi-figure"') >= 3
+
+
+# =====================================================================
+# Step 3: the Home button opens the worked example tab (UX2)
+# =====================================================================
+
+def _tab_containers(node):
+    """Every tab container under an AppTest node, in page order."""
+    found = []
+    for child in getattr(node, "children", {}).values():
+        if getattr(child, "type", None) == "tab_container":
+            found.append(child)
+        found.extend(_tab_containers(child))
+    return found
+
+
+class TestStep3WorkedExampleTab:
+    """UX2: Home's button lands on the example tab; the sidebar link does not."""
+
+    def test_ux2_button_opens_the_example_tab(self):
+        at = _app("Home.py")
+        at.run()
+        assert at.button[0].label == "See the worked example"
+        at.button[0].click().run()
+        assert not at.exception
+        assert [t.label for t in at.tabs] == [
+            "Run it yourself", "View a worked example"]
+        tab_sets = _tab_containers(at.main)
+        assert len(tab_sets) == 1
+        assert tab_sets[0].proto.tab_container.default_tab_index == 1
+        # the flag is one-off: the page took it
+        assert "forecast_open_example" not in at.session_state
+        assert "Saved example (base forecast, default drivers)." in [
+            c.value for c in at.caption]
+
+    def test_ux2_sidebar_link_still_opens_the_first_tab(self):
+        at = _app("pages/forecast.py")
+        at.run()
+        assert not at.exception
+        tab_sets = _tab_containers(at.main)
+        assert len(tab_sets) == 1
+        assert tab_sets[0].proto.tab_container.default_tab_index == 0

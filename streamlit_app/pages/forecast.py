@@ -645,7 +645,11 @@ if _stored_fp is not None and _stored_fp != _fp:
 _live_client = st.session_state.get("live_client")
 _has_commentary = "_commentary_text" in st.session_state
 
-_tab_run, _tab_ex = st.tabs(["Run it yourself", "View a worked example"])
+# Home's "See the worked example" button opens this page on the example tab.
+_open_example = st.session_state.pop("forecast_open_example", False)
+_tab_run, _tab_ex = st.tabs(
+    ["Run it yourself", "View a worked example"],
+    default="View a worked example" if _open_example else None)
 
 with _tab_run:
     if _has_commentary:

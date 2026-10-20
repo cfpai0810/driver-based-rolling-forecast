@@ -107,9 +107,9 @@ st.write(
     "The language model appears in exactly one stage: the commentary, which is "
     "given already-computed figures and asked only to describe them. Everything "
     "numeric, the forecast, the validation, the P&L roll-up, is deterministic "
-    "Python. This is what makes the output reproducible and testable. It also "
-    "means the model's known weakness, arithmetic, is never on the critical "
-    "path.")
+    "Python. This is what makes the output reproducible and testable. The "
+    "model is not asked to calculate: Python produces every figure in the "
+    "table.")
 
 st.markdown("**The stale-clear fingerprint.**")
 st.write(

@@ -34,7 +34,7 @@ from streamlit_app.lib.commentary import (
     forecast_fingerprint, parse_sections, section_to_html,
 )
 from streamlit_app.lib.cost import format_cost
-from streamlit_app.lib.errors import friendly_message
+from streamlit_app.lib.errors import friendly_message, model_failure_message
 from streamlit_app.lib.audit import record_run, get_runs
 from streamlit_app.lib.example_run import EXAMPLE
 from src.step3_ai_engine import build_prompt
@@ -676,26 +676,32 @@ with _tab_run:
                         system=_sys_prompt,
                         messages=[{"role": "user", "content": _usr_prompt}],
                     )
-                    st.session_state["_commentary_text"] = _resp.content[0].text
-                    st.session_state["_commentary_cost"] = (
-                        _resp.usage.input_tokens, _resp.usage.output_tokens,
-                    )
-                    st.session_state["_commentary_stop"] = _resp.stop_reason
-                    st.session_state["_commentary_fp"] = _fp
-                    _ah, _dh = compute_data_hashes()
-                    record_run(
-                        eff_drivers_df=_eff_drivers,
-                        fingerprint=_fp,
-                        actuals_hash=_ah,
-                        driver_hash=_dh,
-                        flags=flags,
-                        has_commentary=True,
-                        tok_in=_resp.usage.input_tokens,
-                        tok_out=_resp.usage.output_tokens,
-                        stop_reason=_resp.stop_reason,
-                        overrides=_overrides,
-                    )
-                    st.rerun()
+                    _reply = (getattr(_resp.content[0], "text", "")
+                              if _resp.content else "")
+                    if not _reply.strip():
+                        # A reply with no text: one plain line, no stack trace
+                        st.error(model_failure_message("unreadable_reply"))
+                    else:
+                        st.session_state["_commentary_text"] = _reply
+                        st.session_state["_commentary_cost"] = (
+                            _resp.usage.input_tokens, _resp.usage.output_tokens,
+                        )
+                        st.session_state["_commentary_stop"] = _resp.stop_reason
+                        st.session_state["_commentary_fp"] = _fp
+                        _ah, _dh = compute_data_hashes()
+                        record_run(
+                            eff_drivers_df=_eff_drivers,
+                            fingerprint=_fp,
+                            actuals_hash=_ah,
+                            driver_hash=_dh,
+                            flags=flags,
+                            has_commentary=True,
+                            tok_in=_resp.usage.input_tokens,
+                            tok_out=_resp.usage.output_tokens,
+                            stop_reason=_resp.stop_reason,
+                            overrides=_overrides,
+                        )
+                        st.rerun()
                 except Exception as exc:
                     st.error(friendly_message(exc))
     else:
@@ -804,8 +810,8 @@ _runs = get_runs()
 with st.expander("Session audit ({} run{})".format(
         len(_runs), "" if len(_runs) == 1 else "s")):
     st.caption(
-        "Session only. This audit trail is held in your browser and cleared "
-        "when the tab closes. It is never stored on any server."
+        "Session only. This audit trail is held in the server's session "
+        "state and cleared when your session ends."
     )
     if not _runs:
         st.info("No commentary runs recorded yet.")

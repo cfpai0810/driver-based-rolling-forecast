@@ -1102,3 +1102,186 @@ class TestDeploymentPins:
         if version("streamlit").startswith("1.60."):
             major, minor = (int(part) for part in version("starlette").split(".")[:2])
             assert (major, minor) < (1, 8)
+
+
+# =====================================================================
+# Step 2 fixes, bundle 1: key gate wording and persistence, audit
+# caption, one plain message per failed model call
+# =====================================================================
+
+import httpx
+
+APP_DIR = Path(__file__).resolve().parent.parent / "streamlit_app"
+TEST_KEY = "sk-ant-api03-" + "x" * 90
+
+
+def _sdk_error(cls, status):
+    """A stand-in Anthropic SDK error built on a fake HTTP exchange."""
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return cls("stand-in", response=httpx.Response(status, request=request),
+               body=None)
+
+
+class _StandInClient:
+    """Plays the Anthropic client: raises the given error or returns the reply."""
+
+    def __init__(self, exc=None, reply=None):
+        self.messages = self
+        self._exc = exc
+        self._reply = reply
+
+    def create(self, **kwargs):
+        if self._exc is not None:
+            raise self._exc
+        return self._reply
+
+
+def _app(page):
+    from streamlit.testing.v1 import AppTest
+    return AppTest.from_file(str(APP_DIR / page), default_timeout=180)
+
+
+def _gate_on_two_pages():
+    """A two-page stand-in app: the gate runs only when 'where' is 'gate'."""
+    import streamlit as st
+    from streamlit_app.lib.key_gate import render_key_gate
+    if st.session_state.get("where", "gate") == "gate":
+        st.session_state["live_client"] = render_key_gate()
+    else:
+        st.write("Another page, without the key gate.")
+
+
+class TestStep2KeyGateAndErrors:
+    """Items 2, 3, 4, 17 and 55."""
+
+    def test_item17_each_failed_call_maps_to_one_plain_message(self):
+        import anthropic
+        from streamlit_app.lib.errors import (
+            failure_code, friendly_message, model_failure_message,
+        )
+        cases = [
+            (_sdk_error(anthropic.AuthenticationError, 401), "key_rejected"),
+            (_sdk_error(anthropic.PermissionDeniedError, 403), "key_forbidden"),
+            (_sdk_error(anthropic.NotFoundError, 404), "model_not_found"),
+            (_sdk_error(anthropic.RateLimitError, 429), "rate_limited"),
+            (_sdk_error(anthropic.BadRequestError, 400), "bad_request"),
+            (_sdk_error(anthropic.InternalServerError, 500), "service_unavailable"),
+            (_sdk_error(anthropic.APIStatusError, 529), "service_unavailable"),
+            (anthropic.APIConnectionError(request=httpx.Request(
+                "POST", "https://api.anthropic.com/v1/messages")),
+             "service_unavailable"),
+        ]
+        for exc, code in cases:
+            assert failure_code(exc) == code
+            message = friendly_message(exc)
+            assert message == model_failure_message(code)
+            assert message.endswith("Code: `{}`".format(code))
+            assert type(exc).__name__ not in message
+            assert "Traceback" not in message
+        for code in ("bad_request", "model_not_found"):
+            assert "usually temporary" not in model_failure_message(code)
+
+    def test_item17_wrapped_sdk_error_still_maps(self):
+        import anthropic
+        from streamlit_app.lib.errors import failure_code, friendly_message
+        try:
+            try:
+                raise _sdk_error(anthropic.AuthenticationError, 401)
+            except anthropic.AuthenticationError as exc:
+                raise RuntimeError("engine wrap") from exc
+        except RuntimeError as wrapped:
+            assert failure_code(wrapped) == "key_rejected"
+            assert "RuntimeError" not in friendly_message(wrapped)
+
+    def test_item17_other_failures_read_plainly(self):
+        from streamlit_app.lib.claude_client import NoKeyError
+        from streamlit_app.lib.errors import failure_code, friendly_message
+        assert failure_code(ValueError("x")) is None
+        generic = friendly_message(ValueError("x"))
+        no_key = friendly_message(NoKeyError("x"))
+        for message in (generic, no_key):
+            assert "ValueError" not in message and "NoKeyError" not in message
+            assert "example prompts" not in message
+            assert "key above" not in message
+        assert "sidebar" in no_key
+
+    def test_item55_forecast_page_shows_one_plain_message(self):
+        import anthropic
+        from streamlit_app.lib.errors import model_failure_message
+        at = _app("pages/forecast.py")
+        at.session_state["live_client"] = _StandInClient(
+            exc=_sdk_error(anthropic.AuthenticationError, 401))
+        at.run()
+        next(b for b in at.button if b.label == "Write commentary").click().run()
+        assert not at.exception
+        shown = [e.value for e in at.error]
+        assert shown == [model_failure_message("key_rejected")]
+        assert "AuthenticationError" not in shown[0]
+        assert "_commentary_text" not in at.session_state
+
+    def test_item55_reply_without_text_is_one_plain_message(self):
+        from types import SimpleNamespace
+        from streamlit_app.lib.errors import model_failure_message
+        empty = SimpleNamespace(
+            content=[], stop_reason="end_turn",
+            usage=SimpleNamespace(input_tokens=10, output_tokens=0))
+        at = _app("pages/forecast.py")
+        at.session_state["live_client"] = _StandInClient(reply=empty)
+        at.run()
+        next(b for b in at.button if b.label == "Write commentary").click().run()
+        assert not at.exception
+        assert [e.value for e in at.error] == [
+            model_failure_message("unreadable_reply")]
+        assert "_commentary_text" not in at.session_state
+
+    def test_item2_key_gate_privacy_wording(self):
+        from streamlit_app.lib.errors import KEY_LOOKS_COMPLETE
+        at = _app("Home.py")
+        at.run()
+        key_input = at.sidebar.text_input(key="byo_api_key")
+        assert key_input.help == ("Held in the server's memory for this session "
+                                  "only. Never stored, never logged.")
+        sidebar_text = " ".join(m.value for m in at.sidebar.markdown)
+        assert ("Your key is held in the server's memory for your session only, "
+                "used to make the call, and never stored or logged.") in sidebar_text
+        assert "browser" not in sidebar_text.lower()
+        key_input.input(TEST_KEY).run()
+        assert [s.value for s in at.sidebar.success] == [KEY_LOOKS_COMPLETE]
+        header = (APP_DIR / "lib" / "key_gate.py").read_text(encoding="utf-8")
+        assert "never stored server-side" not in header
+        assert "browser" not in header.lower()
+
+    def test_item3_audit_caption_says_where_the_trail_is_held(self):
+        at = _app("pages/forecast.py")
+        at.run()
+        captions = " ".join(c.value for c in at.caption)
+        assert ("This audit trail is held in the server's session state and "
+                "cleared when your session ends.") in captions
+        assert "browser" not in captions.lower()
+        assert "never stored on any server" not in captions
+
+    def test_item4_key_survives_a_run_without_the_gate(self):
+        """A run that does not reach the key input (an interrupted run during a
+        page change, or a page without the gate) makes Streamlit drop the
+        input's own state. The key must still be in effect afterwards."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_function(_gate_on_two_pages, default_timeout=60)
+        at.run()
+        at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
+        assert at.session_state["live_client"] is not None
+        at.session_state["where"] = "elsewhere"
+        at.run()
+        at.session_state["where"] = "gate"
+        at.run()
+        assert not at.exception
+        assert at.sidebar.text_input(key="byo_api_key").value == TEST_KEY
+        assert at.session_state["live_client"] is not None
+
+    def test_item4_kept_key_seeds_the_input(self):
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_function(_gate_on_two_pages, default_timeout=60)
+        at.session_state["anthropic_api_key"] = TEST_KEY
+        at.run()
+        assert not at.exception
+        assert at.sidebar.text_input(key="byo_api_key").value == TEST_KEY
+        assert at.session_state["live_client"] is not None

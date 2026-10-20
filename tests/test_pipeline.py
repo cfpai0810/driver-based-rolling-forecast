@@ -1546,3 +1546,116 @@ class TestStep3WorkedExampleTab:
         tab_sets = _tab_containers(at.main)
         assert len(tab_sets) == 1
         assert tab_sets[0].proto.tab_container.default_tab_index == 0
+
+
+# =====================================================================
+# Step 3 fixes: the PDF driver table, and driver notes after an override
+# =====================================================================
+
+class _PromptKeeper:
+    """Plays the Anthropic client: keeps what it was sent, returns a reply."""
+
+    def __init__(self):
+        self.messages = self
+        self.sent = None
+
+    def create(self, **kwargs):
+        from types import SimpleNamespace
+        self.sent = kwargs
+        return SimpleNamespace(
+            content=[SimpleNamespace(text="FORECAST OVERVIEW\nStand-in.")],
+            usage=SimpleNamespace(input_tokens=1742, output_tokens=612),
+            stop_reason="end_turn",
+        )
+
+
+def _driver_rows(drivers_df):
+    """The PDF driver table as {line item: (driver type, assumption, note)}."""
+    from src.step4_output_writer import _driver_table
+    table = _driver_table(drivers_df)
+    return {row[0].text.replace("&amp;", "&"):
+            tuple(cell.text.replace("&amp;", "&") for cell in row[1:])
+            for row in table._cellvalues[1:]}
+
+
+class TestStep3Fixes:
+    """The PDF driver table reads plainly; an override replaces a stale note."""
+
+    def test_fix_pdf_driver_table(self, full_df, pnl_df, drivers_df, flags,
+                                  last_actual, forecast_periods):
+        import re
+        from src.step4_output_writer import build_pdf_bytes
+        rows = _driver_rows(drivers_df)
+        assert {line: row[:2] for line, row in rows.items()} == {
+            "Revenue":           ("Seasonal YoY growth", "12.0%"),
+            "COGS":              ("Margin % of revenue", "41.8%"),
+            "Personnel Cost":    ("Headcount schedule", "Hiring schedule"),
+            "Marketing Spend":   ("Customer acquisition schedule",
+                                  "Customer schedule"),
+            "IT Infrastructure": ("Fixed amount", "EUR 45,000"),
+            "R&D Expense":       ("Month-on-month growth", "6.0%"),
+        }
+        text = _pdf_drawn_text(build_pdf_bytes(
+            full_df, pnl_df, drivers_df, flags, last_actual, forecast_periods))
+        assert "Seasonal YoY growth" in text and "Hiring schedule" in text
+        assert not re.search(r"EUR 0(?![\d.,])", text)
+        for code in ("seasonal_yoy", "margin_pct", "headcount_driven",
+                     "cac_driven", "growth_pct"):
+            assert code not in text
+
+    def test_fix_notes_after_override(self):
+        import src.step4_output_writer as writer
+        real_build = writer.build_pdf_bytes
+        built = {}
+
+        def keep_pdf(*args, **kwargs):
+            built["drivers"] = args[2]
+            built["pdf"] = real_build(*args, **kwargs)
+            return built["pdf"]
+
+        client = _PromptKeeper()
+        at = _app("pages/forecast.py")
+        with patch("src.step4_output_writer.build_pdf_bytes", side_effect=keep_pdf):
+            at.run()
+            at.number_input(key="value_r&d_expense").set_value(10.0)
+            at.number_input(key="value_revenue").set_value(15.0)
+            next(b for b in at.button if b.label == "Re-forecast").click().run()
+            at.session_state["live_client"] = client
+            at.run()
+            next(b for b in at.button if b.label == "Write commentary").click().run()
+        assert not at.exception
+
+        # The prompt: the overridden lines state the new value, marked as
+        # overridden; the lines left at their CSV value keep their notes
+        prompt = client.sent["messages"][0]["content"]
+        block = prompt.split("<driver_assumptions>")[1].split(
+            "</driver_assumptions>")[0]
+        lines = {l.split("|")[0].strip(): l for l in block.strip().splitlines()}
+        assert lines["R&D Expense"].endswith(
+            "| Overridden in the app: Month-on-month growth at 10.0%")
+        assert lines["Revenue"].endswith(
+            "| Overridden in the app: Seasonal YoY growth at 15.0%")
+        assert lines["COGS"].endswith("| 41.8% of revenue")
+        assert lines["IT Infrastructure"].endswith(
+            "| Fixed contract through Dec 2026")
+        for old in ("6%", "6.0%", "12%", "12.0%"):
+            assert old not in lines["R&D Expense"] + lines["Revenue"]
+        assert "6% MoM investment ramp" not in prompt
+        assert "12% annual YoY growth" not in prompt
+        assert "Annual growth assumption:   15%" in prompt
+
+        # The PDF: the same notes, and neither line states 6% or 12%
+        rows = _driver_rows(built["drivers"])
+        assert rows["R&D Expense"] == (
+            "Month-on-month growth", "10.0%",
+            "Overridden in the app: Month-on-month growth at 10.0%")
+        assert rows["Revenue"] == (
+            "Seasonal YoY growth", "15.0%",
+            "Overridden in the app: Seasonal YoY growth at 15.0%")
+        assert rows["COGS"][2] == "41.8% of revenue"
+        for old in ("6%", "6.0%", "12%", "12.0%"):
+            assert old not in " ".join(rows["R&D Expense"] + rows["Revenue"])
+        text = _pdf_drawn_text(built["pdf"])
+        assert "6% MoM investment ramp" not in text
+        assert "12% annual YoY growth" not in text
+        assert "Overridden in the app: Month-on-month growth at 10.0%" in text

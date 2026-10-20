@@ -5,7 +5,8 @@
 # functions to build the engine's driver_overrides dict.
 # =============================================================================
 
-from streamlit_app.lib.driver_menu import METHOD_VALUE_SHAPE
+from config import CURRENCY_CODE
+from streamlit_app.lib.driver_menu import METHOD_LABEL, METHOD_VALUE_SHAPE
 
 
 def to_display(method, engine_value):
@@ -43,3 +44,17 @@ def build_overrides(method_values):
             continue
         overrides[line] = {"method": method, "value": to_engine(method, display_val)}
     return overrides if overrides else None
+
+
+def override_note(method, engine_value):
+    """The driver note for a line changed in the app.
+
+    The CSV note describes the CSV assumption (for example "6% MoM investment
+    ramp"), so after an override it would state the old figure. This note
+    states the new value and says it was overridden, for the prompt and the PDF.
+    """
+    if METHOD_VALUE_SHAPE[method] == "pct":
+        amount = "{:.1%}".format(engine_value)
+    else:
+        amount = "{} {:,.0f} a month".format(CURRENCY_CODE, engine_value)
+    return "Overridden in the app: {} at {}".format(METHOD_LABEL[method], amount)

@@ -41,6 +41,7 @@ from config import (
     COGS_ITEMS,
     OPEX_ITEMS,
 )
+from streamlit_app.lib.driver_menu import METHOD_LABEL
 
 REVENUE_ITEMS_LOCAL = REVENUE_ITEMS
 COGS_ITEMS_LOCAL    = COGS_ITEMS
@@ -82,6 +83,15 @@ S_TBL_SM_NUM = ParagraphStyle("TblSmNum", fontName="Helvetica",      fontSize=7,
                 textColor=BODY_DARK, leading=9, alignment=TA_RIGHT)
 
 NO_VALUE = "n/a"   # shown in a table cell that has no figure
+
+# The driver table names each driver as the web page's driver panel does;
+# fixed_growth is the older name of growth_pct
+DRIVER_NAMES = dict(METHOD_LABEL, fixed_growth=METHOD_LABEL["growth_pct"])
+# A schedule-driven line has no single value: name what drives it instead
+SCHEDULE_ASSUMPTIONS = {
+    "headcount_driven": "Hiring schedule",
+    "cac_driven":       "Customer schedule",
+}
 
 
 def pdf_text(text):
@@ -292,7 +302,7 @@ def _forecast_table(full_df, line_items):
 
 def _driver_table(drivers_df):
     """Compact driver assumptions table: Line Item | Driver Type | Assumption | Note."""
-    cw = [3.2*cm, 2.6*cm, 2.2*cm, PAGE_W - 8.0*cm]
+    cw = [2.7*cm, 3.5*cm, 2.9*cm, PAGE_W - 9.1*cm]
     rows = [[
         Paragraph("<b>Line item</b>",   S_TBL_HDR),
         Paragraph("<b>Driver type</b>", S_TBL_HDR),
@@ -304,12 +314,14 @@ def _driver_table(drivers_df):
         dval  = row["driver_value"]
         if dtype in ("seasonal_yoy", "growth_pct", "margin_pct", "fixed_growth"):
             val_str = "{:.1%}".format(dval)
+        elif dtype in SCHEDULE_ASSUMPTIONS:
+            val_str = SCHEDULE_ASSUMPTIONS[dtype]
         else:
             val_str = "EUR {:,.0f}".format(dval)
         note = row.get("note", "") if "note" in row.index else ""
         rows.append([
             Paragraph(pdf_text(row["line_item"]), S_TBL),
-            Paragraph(pdf_text(dtype),            S_TBL),
+            Paragraph(pdf_text(DRIVER_NAMES.get(dtype, dtype)), S_TBL),
             Paragraph(pdf_text(val_str),          S_TBL_NUM),
             Paragraph(pdf_text(note),             S_TBL),
         ])

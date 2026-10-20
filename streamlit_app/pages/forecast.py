@@ -13,6 +13,7 @@
 #   inputs survive that rerun via their keys.
 # =============================================================================
 
+import math
 import sys
 from pathlib import Path
 
@@ -28,7 +29,9 @@ from streamlit_app.lib.theme import inject_css
 from streamlit_app.lib.driver_menu import (
     LINE_DEFAULTS, ALLOWED_METHODS, METHOD_LABEL, METHOD_VALUE_SHAPE,
 )
-from streamlit_app.lib.driver_controls import to_display, build_overrides
+from streamlit_app.lib.driver_controls import (
+    to_display, build_overrides, override_note,
+)
 from streamlit_app.lib.charts import build_forecast_chart
 from streamlit_app.lib.commentary import (
     forecast_fingerprint, parse_sections, section_to_html,
@@ -101,15 +104,25 @@ def _adjusted_forecast(overrides):
 def _effective_drivers(base_drivers_df, overrides):
     """Return a drivers_df reflecting any user overrides, so build_prompt
     and the PDF driver table show the adjusted assumptions rather than the
-    CSV defaults."""
+    CSV defaults. A line whose method or value changed gets a note stating
+    the new value (its CSV note states the old one); a line left at its CSV
+    value keeps its note."""
     if not overrides:
         return base_drivers_df
     df = base_drivers_df.copy()
+    if "note" not in df.columns:
+        df["note"] = ""
     for line, ov in overrides.items():
         mask = df["line_item"] == line
         if mask.any():
+            base = df.loc[mask].iloc[0]
+            changed = ov["method"] != base["driver_type"] or not math.isclose(
+                float(ov["value"]), float(base["driver_value"]),
+                rel_tol=1e-9, abs_tol=1e-12)
             df.loc[mask, "driver_type"] = ov["method"]
             df.loc[mask, "driver_value"] = ov["value"]
+            if changed:
+                df.loc[mask, "note"] = override_note(ov["method"], ov["value"])
     return df
 
 

@@ -149,7 +149,8 @@ def _kpi_row_html(title, cards_data):
     for label, value, sub in cards_data:
         sub_html = ""
         if sub:
-            sub_html = ('<div style="font-size:0.78rem;margin-top:2px">'
+            sub_html = ('<div class="sc-kpi-figure" '
+                        'style="font-size:0.78rem;margin-top:2px">'
                         '{}</div>').format(sub)
         # Tiles share a row on wide screens and stack on a phone
         cards.append(
@@ -157,8 +158,8 @@ def _kpi_row_html(title, cards_data):
             'border-left:4px solid {};border-radius:8px;padding:14px 18px">'
             '<div style="font-size:0.72rem;color:{};font-weight:600;'
             'letter-spacing:0.05em;text-transform:uppercase">{}</div>'
-            '<div style="font-size:1.4rem;font-weight:700;color:{};'
-            'margin-top:4px">{}</div>'
+            '<div class="sc-kpi-figure" style="font-size:1.4rem;'
+            'font-weight:700;color:{};margin-top:4px">{}</div>'
             '{}</div>'.format(LIGHT_BLUE, DARK_BLUE, MUTED, label,
                               DARK_BLUE, value, sub_html)
         )

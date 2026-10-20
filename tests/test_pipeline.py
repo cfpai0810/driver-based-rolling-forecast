@@ -1430,3 +1430,77 @@ class TestStep2ForecastAndOutputs:
         assert len(calls) == 1
         kwargs = {k.arg: ast.literal_eval(k.value) for k in calls[0].keywords}
         assert kwargs["initial_sidebar_state"] == "auto"
+
+
+# =====================================================================
+# Step 2 fixes, bundle 3: key gate in an expander, a Home button to the
+# worked example, tabular figures only on numeric elements
+# =====================================================================
+
+class TestStep2HomeAndTheme:
+    """UX1, UX2 and UX4."""
+
+    GATE_LABEL = "Run it live with your own key (optional)"
+
+    def test_ux1_key_gate_sits_in_a_closed_expander(self):
+        at = _app("Home.py")
+        at.run()
+        gates = [e for e in at.sidebar.expander if e.label == self.GATE_LABEL]
+        assert len(gates) == 1
+        gate = gates[0]
+        assert gate.proto.expanded is False
+        assert gate.text_input(key="byo_api_key").label == "Anthropic API key"
+        inside = " ".join(m.value for m in gate.markdown) + " ".join(
+            c.value for c in gate.caption)
+        assert "bills your Anthropic account" in inside
+        assert "held in the server's memory" in inside
+        headings = " ".join(m.value for m in at.sidebar.markdown)
+        assert "Run it yourself" not in headings
+        below = [c.value for c in at.sidebar.caption if c.value.startswith("Live mode")]
+        assert below == ["Live mode is off. The worked examples need no key."]
+
+        gate.text_input(key="byo_api_key").input("sk-ant-short").run()
+        gate = next(e for e in at.sidebar.expander if e.label == self.GATE_LABEL)
+        assert len(gate.warning) == 1
+        gate.text_input(key="byo_api_key").input(TEST_KEY).run()
+        gates = [e for e in at.sidebar.expander if e.label == self.GATE_LABEL]
+        assert len(gates) == 1
+        below = [c.value for c in at.sidebar.caption if c.value.startswith("Live mode")]
+        assert below == ["Live mode is on for this session."]
+
+    def test_ux2_home_button_opens_the_worked_example(self):
+        at = _app("Home.py")
+        at.run()
+        assert "byo_api_key" not in at.session_state or not at.session_state[
+            "byo_api_key"]
+        labels = [b.label for b in at.button]
+        assert labels[0] == "See the worked example"
+        at.button[0].click().run()
+        assert not at.exception
+        assert "View a worked example" in [t.label for t in at.tabs]
+        assert "Saved example (base forecast, default drivers)." in [
+            c.value for c in at.caption]
+        assert any("FORECAST OVERVIEW" in m.value for m in at.markdown)
+
+    def test_ux4_tabular_figures_only_on_numeric_elements(self):
+        import re
+        from streamlit_app.lib.theme import inject_css
+        css = inject_css()
+        rules = re.findall(r"([^{}]+)\{\{?([^}]*)\}", css)
+        global_rule = next(body for sel, body in rules if "html, body" in sel)
+        assert "font-family" in global_rule
+        assert "tnum" not in global_rule and '"cv05" 1' in global_rule
+        numeric = [sel for sel, body in rules if "tnum" in body]
+        assert len(numeric) == 1
+        selectors = [s.strip() for s in numeric[0].split("*/")[-1].split(",")]
+        for wanted in ("table", "table *", '[data-testid="stMetricValue"]',
+                       '[data-testid="stMetricDelta"]', ".sc-kpi-figure"):
+            assert wanted in selectors
+
+    def test_ux4_kpi_figures_carry_the_numeric_class(self):
+        at = _app("pages/forecast.py")
+        at.run()
+        rows = [m.value for m in at.markdown if "display:flex" in m.value]
+        assert len(rows) == 2
+        for html in rows:
+            assert html.count('class="sc-kpi-figure"') >= 3

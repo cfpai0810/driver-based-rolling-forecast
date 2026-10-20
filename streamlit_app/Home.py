@@ -35,6 +35,11 @@ def _home_page():
         unsafe_allow_html=True,
     )
 
+    # The committed worked example needs no key: it is the "View a worked
+    # example" tab on the Forecast page
+    if st.button("See the worked example"):
+        st.switch_page(FORECAST_PAGE)
+
     components.html(governance_flow_svg(), height=220, scrolling=False)
 
     st.markdown("#### What this does")
@@ -125,12 +130,14 @@ PAGES_DIR = Path(__file__).resolve().parent / "pages"
 client = render_key_gate()
 st.session_state["live_client"] = client
 
+FORECAST_PAGE = st.Page(str(PAGES_DIR / "forecast.py"),
+                        title="Forecast", icon=":material/trending_up:")
+
 pg = st.navigation([
     st.Page(_home_page, title="Home", icon=":material/home:"),
     st.Page(str(PAGES_DIR / "how_the_model_works.py"),
             title="How the Model Works", icon=":material/menu_book:"),
-    st.Page(str(PAGES_DIR / "forecast.py"),
-            title="Forecast", icon=":material/trending_up:"),
+    FORECAST_PAGE,
     st.Page(str(PAGES_DIR / "your_own_data.py"),
             title="Your Own Data", icon=":material/upload_file:"),
     st.Page(str(PAGES_DIR / "how_its_built.py"),

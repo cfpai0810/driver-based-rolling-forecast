@@ -3,7 +3,7 @@
 # =============================================================================
 # On page load, shows the base forecast. The driver panel lets the user
 # change any of the six line drivers, then click "Re-forecast" to recompute.
-# "Reset to defaults" returns to the base forecast.
+# "Reset defaults" returns to the base forecast.
 #
 # Widget-state design (the known-hard part):
 #   Every control has a stable key; its value lives in st.session_state.

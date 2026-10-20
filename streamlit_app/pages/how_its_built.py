@@ -37,11 +37,13 @@ st.markdown("---")
 st.markdown("#### Why you can trust the numbers")
 
 st.write(
-    "The tool never lets the language model do arithmetic. That is the whole "
-    "idea. A large language model is good at describing a result in plain "
-    "words, but it is not a calculator and it is not asked to be one. Every "
-    "figure you see is computed by deterministic Python code, the same way a "
-    "spreadsheet would, and the same inputs always produce the same output.")
+    "Python produces every reported figure; the model writes the wording "
+    "around it. A large language model is good at describing a result in "
+    "plain words, but it is not a calculator and it is not asked to be one. "
+    "Every figure in the KPI tiles, the chart and the P&L table is computed "
+    "by deterministic Python code, the same way a spreadsheet would, and the "
+    "same inputs always produce the same output. This version does not check "
+    "the numbers in the model's wording, so read the table for figures.")
 
 st.markdown("**The work happens in separated layers, and you open and close "
             "every one.**")
@@ -54,14 +56,14 @@ st.write(
     "after commentary was written, the tool clears the stale commentary and "
     "requires a fresh run.")
 
-st.markdown("**Every run leaves a record.**")
+st.markdown("**Every commentary run leaves a record.**")
 st.write(
-    "Each forecast run, whether it included commentary or not, is recorded in "
-    "the session audit trail with a fingerprint of the exact P&L, the "
-    "effective drivers, dual hashes of the input files, token counts, cost, "
-    "and whether review was recommended. The point is that a forecast is "
-    "reproducible and reviewable after the fact, which is what a finance "
-    "function needs before it will rely on any tool.")
+    "Each commentary run is recorded in the session audit trail with a "
+    "fingerprint of the exact P&L, the effective drivers, dual hashes of the "
+    "input files, token counts, cost, and whether review was recommended. A "
+    "re-forecast without commentary is not recorded. The point is that a "
+    "forecast is reproducible and reviewable after the fact, which is what a "
+    "finance function needs before it will rely on any tool.")
 
 st.info(
     "In one line: you set the drivers, Python calculates every figure, the "
@@ -119,12 +121,16 @@ st.write(
 
 st.markdown("**Safety properties that are enforced, not hoped for.**")
 st.write(
-    "The base forecast is cached and never mutated. Driver overrides are "
-    "applied on a copy, so resetting to defaults is instant and lossless. "
-    "The commentary fingerprint is checked on every render. Downloads build "
-    "the PDF and CSV to memory from the same shared builders the CLI uses, "
-    "so web and CLI outputs are identical. Each of these properties is covered "
-    "by a test.")
+    "The base forecast is computed once and cached. Driver overrides go into "
+    "a fresh run of the engine and leave the input data alone, so Reset "
+    "defaults returns to the base forecast at once. The commentary "
+    "fingerprint is checked on every render. Downloads build the PDF and CSV "
+    "in memory with the same builders the CLI uses, but the two PDFs differ: "
+    "the web PDF adds an Operational inputs section that the CLI PDF leaves "
+    "out. Tests cover the engine's override handling (an R&D override "
+    "leaves the other lines unchanged, and restating a default reproduces "
+    "the base forecast) and the shared builders; no test compares the web "
+    "and CLI outputs or checks the cache.")
 
 st.markdown("**Tested to a level a finance tool should be.**")
 st.write(

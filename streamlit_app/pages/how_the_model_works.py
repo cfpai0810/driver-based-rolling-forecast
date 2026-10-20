@@ -59,14 +59,14 @@ lines = [
     {
         "P&L line": "Revenue",
         "Driver": "Seasonal YoY growth",
-        "Units": "Fraction (e.g. 0.12 = 12%)",
-        "Default": "0.12 (12% annual growth)",
+        "Units": "Percent (e.g. 12.0 = 12%)",
+        "Default": "12.0 (12% annual growth)",
     },
     {
         "P&L line": "COGS",
         "Driver": "Margin (% of Revenue)",
-        "Units": "Fraction (e.g. 0.418 = 41.8%)",
-        "Default": "0.418 (41.8% of revenue)",
+        "Units": "Percent (e.g. 41.8 = 41.8%)",
+        "Default": "41.8 (41.8% of revenue)",
     },
     {
         "P&L line": "Personnel Cost",
@@ -89,8 +89,8 @@ lines = [
     {
         "P&L line": "R&D Expense",
         "Driver": "Monthly growth rate",
-        "Units": "Fraction (e.g. 0.06 = 6%)",
-        "Default": "0.06 (6% month on month)",
+        "Units": "Percent (e.g. 6.0 = 6%)",
+        "Default": "6.0 (6% month on month)",
     },
 ]
 
@@ -103,18 +103,21 @@ st.write(
     "The driver panel on the Forecast page shows a method selector and a value "
     "input for each P&L line. When you change a method, the value input "
     "relabels itself to match the units that method expects. You can switch "
-    "any line to a different method (for example, switching Revenue from "
-    "seasonal YoY to a fixed monthly amount) and the engine will apply the "
-    "new formula. Click Re-forecast to recompute the P&L with your changes, "
-    "or Reset to defaults to return to the base forecast.")
+    "a line to another method on its menu (for example, switching Revenue "
+    "from seasonal YoY to month-on-month growth) and the engine will apply "
+    "the new formula. Rates are entered as percentages, so 12.0 means 12%. "
+    "Click Re-forecast to recompute the P&L with your changes, or Reset "
+    "defaults to return to the base forecast.")
 
 st.write(
-    "The available methods for each line are: seasonal YoY growth, margin "
-    "percentage, fixed amount, and growth percentage. Not every method makes "
-    "sense for every line (a margin on IT Infrastructure, for instance, "
-    "would be unusual), but the engine will compute it if you ask. The "
-    "defaults shown in the table above are the ones that match the sample "
-    "company's actual driver structure.")
+    "Each line offers only the methods that suit it. Revenue can use "
+    "seasonal YoY or month-on-month growth; COGS a margin of revenue, "
+    "month-on-month growth or a fixed amount; Personnel Cost and Marketing "
+    "Spend their schedule, a fixed amount or month-on-month growth; IT "
+    "Infrastructure a fixed amount or month-on-month growth; and R&D "
+    "month-on-month growth or a fixed amount. The defaults shown in the "
+    "table above are the ones that match the sample company's actual "
+    "driver structure.")
 
 # -- How derived lines work ---------------------------------------------------
 st.markdown("---")
@@ -156,9 +159,8 @@ st.info(
     "Marketing Spend is driven by customer acquisition targets, but Revenue is "
     "modelled on its own seasonal trend, and the two are not linked in this "
     "model. Changing marketing spend does not change revenue. That is a real "
-    "simplification, and the commentary flags it when it applies. A cut to "
-    "marketing should be read as an upper bound on the profit benefit rather "
-    "than the full picture.")
+    "simplification. A cut to marketing should be read as an upper bound on "
+    "the profit benefit rather than the full picture.")
 
 st.divider()
 st.caption(

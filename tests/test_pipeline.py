@@ -6,7 +6,7 @@
 # Run from the project root with (venv) active:
 #   pytest tests/test_pipeline.py -v
 #
-# Fifteen test classes covering the full surface area of the pipeline:
+# The first fifteen test classes cover the pipeline itself:
 #   1. Data loading            — all five input files load and validate
 #   2. Seasonal derivation      — indices sum to 12, summer dip, Q4 peak
 #   3. seasonal_yoy forecast     — trailing 12m, annual target, monthly spread
@@ -23,8 +23,12 @@
 #  14. Session audit record      — audit shape, drivers, overrides
 #  15. Keyless example and diagrams — example fingerprint, commentary, SVG
 #
-# No real API calls are made. The Claude call is mocked so the suite runs
-# in a couple of seconds and costs nothing.
+# The classes after them cover the deployment pin and the review fixes: the
+# key gate, plain messages for failed model calls, PDF text, the Home and
+# Forecast pages, and the driver notes after an override.
+#
+# No real API calls are made. Where a test needs the model, a stand-in client
+# plays it, so the suite needs no key and costs nothing.
 # =============================================================================
 
 import json

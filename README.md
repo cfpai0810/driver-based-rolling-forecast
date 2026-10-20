@@ -38,13 +38,13 @@ The data in this repository is illustrative sample data for a fictional entity.
 
 ## The design rule
 
-The language model never does arithmetic.
+Python produces every reported figure; the model writes the wording around it.
 
-Python calculates every number. Claude only interprets and narrates. Every
-figure in the forecast is traceable to a specific calculation, not to the
-language model. This matters because language models are reliable at language
-and unreliable at multi-step calculation, so the trust boundary is drawn
-exactly where the reliability boundary is.
+Every figure in the forecast tables and the CSV is traceable to a specific
+calculation, not to the language model. This version does not check the
+numbers in the model's wording, so read the tables for figures. The split
+matters because language models are reliable at language and unreliable at
+multi-step calculation.
 
 ---
 
@@ -227,7 +227,7 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               96 tests across 15 test classes
+  test_pipeline.py               123 tests
 ```
 
 ---
@@ -272,23 +272,29 @@ so any run is fully reproducible.
 
 ## Test suite
 
-96 tests across 15 test classes, no real API calls:
+123 tests, no real API calls:
 
 ```bash
 pytest tests/test_pipeline.py -v
 ```
 
-The classes cover data loading, seasonal derivation, all six driver methods,
-the P&L roll-up, validation flags, output writing with the audit trail, PDF
-and CSV builders, the Streamlit theme and key gate, chart rendering,
-governance diagrams, and the worked-example cache.
+The tests cover data loading, seasonal derivation, all six driver methods,
+the P&L roll-up, validation flags, output writing with the audit trail,
+driver overrides and the driver controls, the commentary fingerprint and
+section parsing, the PDF and CSV builders, the session audit record, the
+worked example and the governance diagrams, the key gate, plain messages
+for failed model calls, and the Home and Forecast pages (the worked example
+button, the KPI tiles, the driver notes after an override, and the
+tabular-figures rule in the theme). No test checks the charts.
 
 ---
 
 ## Tech stack
 
-Python 3.11 · pandas · Anthropic Claude API · python-dotenv · reportlab
+Python · pandas · Anthropic Claude API · python-dotenv · reportlab
 (including reportlab.graphics for the chart) · Streamlit · hashlib · pytest
+
+Tested on Python 3.13 and 3.14. numpy 2.5 needs Python 3.12 or later.
 
 ---
 

@@ -126,8 +126,7 @@ period,target_new_customers,cac,fixed_campaign
 ```
 
 Monthly marketing spend = `target_new_customers` x `cac` + `fixed_campaign`. Note
-that in this model, customer acquisition does not feed back into Revenue; the tool
-flags this when it applies.
+that in this model, customer acquisition does not feed back into Revenue.
 
 ## Running it
 
@@ -145,9 +144,9 @@ Paste your key into the sidebar, then open Forecast and click Write commentary.
 
 ## Adjusting drivers in the web app
 
-The Forecast page lets you change any driver's method and value from the sidebar
-without editing CSV files. Changes take effect when you click Re-forecast. The base
-forecast is cached, so resetting to defaults is instant.
+The Forecast page lets you change any driver's method and value in its Driver
+assumptions panel without editing CSV files. Changes take effect when you click
+Re-forecast. The base forecast is cached, so resetting to defaults is instant.
 
 ## Constraints worth knowing
 

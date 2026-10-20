@@ -101,7 +101,8 @@ def _home_page():
             "What it costs. Each run makes one short call to Claude Sonnet to "
             "narrate the forecast. At Sonnet's current rate of about three US "
             "dollars per million input tokens and fifteen per million output "
-            "tokens, a single run is well under one US cent in practice.")
+            "tokens, a single run costs about 1.4 US cents: the worked "
+            "example used 1,742 input and 612 output tokens.")
         st.caption(
             "Your key is used only for your session and is not stored by this "
             "site. On the web the data stays sample-only; to work on your own "

@@ -227,7 +227,7 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               123 tests
+  test_pipeline.py               127 tests
 ```
 
 ---
@@ -272,9 +272,10 @@ so any run is fully reproducible.
 
 ## Test suite
 
-123 tests, no real API calls:
+127 tests, no real API calls:
 
 ```bash
+pip install -r requirements-dev.txt
 pytest tests/test_pipeline.py -v
 ```
 

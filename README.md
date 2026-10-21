@@ -25,7 +25,8 @@ The Forecast page has two tabs. "View a worked example", open on arrival,
 shows the base forecast with the commentary saved from a real run, so the
 full output is visible without a key. "Run it yourself" lets you adjust
 individual drivers and request a live AI commentary with your own
-Anthropic API key.
+Anthropic API key. The result is a DRAFT until a named reviewer signs it
+off in the page's Sign-off section.
 
 **Outputs:** a text commentary, a chart-led A4 PDF report with quarterly
 and monthly P&L tables, and a detailed P&L CSV export.
@@ -148,6 +149,17 @@ This marks the most recent run as reviewed and records the reviewer name and a
 timestamp back into the audit log. The AI does the heavy lifting; the person
 stays accountable for what goes to the board.
 
+On the web, the Forecast page ends with a Sign-off section once the forecast
+has commentary. It lists the reasons for review as outstanding items; the
+reviewer types a name and the word SIGN, and the result becomes FINAL: the PDF
+carries "FINAL: signed off by NAME on D Month YYYY at HH:MM UTC" near the top
+(a DRAFT carries "DRAFT: not signed off"), and the run's row in the session
+audit carries the sign-off. A re-forecast that changes the figures, or new
+commentary, is a new DRAFT.
+The name and time are kept for the session only: they are not stored on the
+server, and the name is not verified. The rule lives in `src/signoff.py`,
+shared word for word across the series.
+
 ---
 
 ## How to run
@@ -203,13 +215,14 @@ src/
   step2_forecast_engine.py       Seasonality, six drivers, P&L roll-up
   step3_ai_engine.py             Build prompts, call Claude
   step4_output_writer.py         Text, PDF, CSV, audit log
+  signoff.py                     The sign-off rule: a named reviewer types SIGN (DRAFT or FINAL)
 
 streamlit_app/
   Home.py                        App shell and landing page
   lib/                           Theme, key gate, charts, cost, audit, errors
   pages/
     how_the_model_works.py       Driver methods and seasonality explained
-    forecast.py                  Live forecast with driver controls
+    forecast.py                  Live forecast with driver controls and sign-off
     your_own_data.py             Guide for running on your own numbers
     how_its_built.py             Trust story and technical depth
 
@@ -228,7 +241,8 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               137 tests
+  test_pipeline.py               149 tests
+  test_signoff.py                8 tests: the sign-off rule
 ```
 
 ---
@@ -273,11 +287,11 @@ so any run is fully reproducible.
 
 ## Test suite
 
-137 tests, no real API calls:
+157 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt
-pytest tests/test_pipeline.py -v
+pytest tests -v
 ```
 
 The tests cover data loading, seasonal derivation, all six driver methods,
@@ -290,7 +304,8 @@ button, the KPI tiles, the driver notes after an override, and the
 tabular-figures rule in the theme), and the series look: the theme colour,
 a banner on every page, the status chips, the Home blocks and page links,
 the page titles and addresses, the tab order, the live run inside its own
-tab and the browser tab icon. No test checks the charts.
+tab and the browser tab icon; and the sign-off rule and the Sign-off section
+from a run to FINAL. No test checks the charts.
 
 ---
 

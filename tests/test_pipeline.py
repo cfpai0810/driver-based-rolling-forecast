@@ -25,7 +25,9 @@
 #
 # The classes after them cover the deployment pin and the review fixes: the
 # key gate, plain messages for failed model calls, PDF text, the Home and
-# Forecast pages, and the driver notes after an override.
+# Forecast pages, and the driver notes after an override. The last class
+# covers the Sign-off section (Step 5b); the sign-off rule itself is tested
+# in test_signoff.py.
 #
 # No real API calls are made. Where a test needs the model, a stand-in client
 # plays it, so the suite needs no key and costs nothing.
@@ -1075,7 +1077,7 @@ class TestKeylessExampleAndDiagrams:
         assert "<svg" in svg
         assert "viewBox" in svg
         assert "YOU SET DRIVERS" in svg
-        assert "YOU REVIEW" in svg
+        assert "YOU SIGN OFF" in svg   # the web's Sign-off section (Step 5b)
         assert "APPROVE" not in svg   # no approval step on the web
 
     def test_pipeline_flow_svg_valid(self):
@@ -1804,10 +1806,11 @@ class TestStep5aLook:
                             "#### Pages"]
         promise = text[text.index("#### The governance promise") + 1]
         for lead in ("**Python forecasts.**", "**A rule marks for review.**",
-                     "**The model narrates.**", "**A person reviews.**"):
+                     "**The model narrates.**", "**The reviewer signs.**"):
             assert lead in promise
-        assert promise.endswith("- **A person reviews.** This version has no sign-off "
-                                "step on the web, so nothing here is signed or final.")
+        # Step 5b: the web has a Sign-off section, so the interim bullet went
+        assert promise.endswith("- **The reviewer signs.** Nothing is final until a "
+                                "named reviewer reads it and signs.")
         # one link per page except Home, in the navigation order, "Title: what it is"
         links = [e.proto for e in at.main.get("page_link")]
         assert [link.page for link in links] == [
@@ -1904,7 +1907,7 @@ class TestStep5aLook:
         assert [e.label for e in run.expander] == ["Driver assumptions",
                                                    "Session audit (0 runs)"]
         assert [d.proto.label for d in run.get("download_button")] == [
-            "Download PDF", "Download CSV"]
+            "Download the DRAFT PDF", "Download CSV"]
         run_text = [m.value for m in run.markdown]
         for heading in ("#### Operational Inputs", "#### AI Commentary",
                         "#### Data Flags", "#### Downloads"):
@@ -1936,3 +1939,465 @@ class TestStep5aLook:
         assert example.caption[0].value == (
             "Saved example (base forecast, default drivers).")
         assert any("FORECAST OVERVIEW" in m.value for m in example.markdown)
+
+
+# =====================================================================
+# Step 5b: the Sign-off section, after Project 6 (the rule is
+# src/signoff.py, tested in test_signoff.py; these tests drive the page)
+# =====================================================================
+
+_SIGNING_MEANS = (
+    "Signing says you have read the result against the figures above. The "
+    "figures come from Python. This version does not check the numbers in the "
+    "model's wording.")
+_DRAFT_CHIP = '<span class="sc-status draft">DRAFT</span>'
+_FINAL_CHIP = '<span class="sc-status final">FINAL</span>'
+_NAME_BOX, _SIGN_BOX, _SIGN_BUTTON = "_signoff_reviewer", "_signoff_sign", "_signoff_button"
+_STAND_IN_COMMENTARY = (
+    "FORECAST OVERVIEW\nStand-in client: commentary for the tests.\n\n"
+    "DRIVER COMMENTARY\n- **Revenue:** stand-in text.\n\n"
+    "KEY RISKS AND RECOMMENDATIONS\n- Stand-in text.\n\n"
+    "DATA FLAGS\nNo flags raised.")
+
+
+class _CommentaryClient:
+    """Plays the Anthropic client for Write commentary: the same reply on
+    every call, with the given output tokens and stop reason."""
+
+    def __init__(self, output_tokens=612, stop_reason="end_turn"):
+        self.messages = self
+        self.calls = 0
+        self._out, self._stop = output_tokens, stop_reason
+
+    def create(self, **kwargs):
+        from types import SimpleNamespace
+        self.calls += 1
+        return SimpleNamespace(
+            content=[SimpleNamespace(text=_STAND_IN_COMMENTARY)],
+            usage=SimpleNamespace(input_tokens=1742, output_tokens=self._out),
+            stop_reason=self._stop)
+
+
+def _pdf_unescape(match):
+    """One PDF string escape: an octal code (a character such as é) or a
+    character taken as it is."""
+    code = match.group(1)
+    return bytes([int(code, 8)]) if code[0] in b"01234567" else code
+
+
+def _pdf_lines(pdf):
+    """The strings a reportlab PDF draws, in order and unescaped, as one
+    line of text (standard library only)."""
+    import base64
+    import re
+    import zlib
+    out = []
+    for raw in re.findall(rb"stream\r?\n(.*?)endstream", pdf, re.S):
+        data = raw.strip()
+        if data.endswith(b"~>"):
+            data = data[:-2]
+        try:
+            data = zlib.decompress(base64.a85decode(data))
+        except Exception:
+            continue
+        for s in re.findall(rb"\(((?:[^()\\]|\\.)*)\)\s*Tj", data):
+            out.append(re.sub(rb"\\([0-7]{1,3}|.)", _pdf_unescape, s, flags=re.S)
+                       .decode("latin-1"))
+    return " ".join(" ".join(out).split())
+
+
+@pytest.fixture
+def downloads(monkeypatch):
+    """Reads the file behind a download button: while the test runs, every
+    file the page hands to one is kept by its media id."""
+    from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage
+    files = {}
+    load = MemoryMediaFileStorage.load_and_get_id
+
+    def _load(self, data, mimetype, kind, filename=None):
+        file_id = load(self, data, mimetype, kind, filename)
+        files[file_id] = self.get_file(file_id).content
+        return file_id
+
+    monkeypatch.setattr(MemoryMediaFileStorage, "load_and_get_id", _load)
+
+    def read(at, label):
+        (button,) = [d for d in at.get("download_button") if d.proto.label == label]
+        return files[button.proto.url.rsplit("/", 1)[-1].split(".")[0]]
+    return read
+
+
+def _live(client=None):
+    """The Forecast page with a stand-in client where the key gate puts one."""
+    at = _app("pages/forecast.py")
+    at.session_state["live_client"] = client or _CommentaryClient()
+    at.run()
+    assert not at.exception
+    return at
+
+
+def _click(at, label):
+    next(b for b in at.button if b.label == label).click().run()
+    assert not at.exception
+
+
+def _section(at):
+    """The Sign-off section in "Run it yourself", from its heading to the
+    Session audit expander, as (element type, text) pairs; [] when there is
+    no section."""
+    found, inside = [], False
+    for node in at.tabs[1].children.values():
+        if node.type == "markdown" and node.value == "#### Sign-off":
+            inside = True
+        if inside and node.type == "expander":
+            break
+        if inside:
+            found.append((node.type, node.label if node.type in (
+                "text_input", "button") else node.value))
+    return found
+
+
+def _sign(at, name="José Núñez", word="SIGN"):
+    at.text_input(key=_NAME_BOX).input(name).run()
+    at.text_input(key=_SIGN_BOX).input(word).run()
+    at.button(key=_SIGN_BUTTON).click().run()
+    assert not at.exception
+
+
+def _boxes(at):
+    return [(t.key, t.value) for t in at.text_input if t.key in (_NAME_BOX, _SIGN_BOX)]
+
+
+def _sign_buttons(at):
+    return [b for b in at.button if b.key == _SIGN_BUTTON]
+
+
+def _labels(at):
+    return [d.proto.label for d in at.get("download_button")]
+
+
+def _audit_expander(at):
+    (audit,) = [e for e in at.tabs[1].expander if e.label.startswith("Session audit")]
+    return audit
+
+
+def _gate_then_forecast():
+    """Home.py's shell in small: the key gate, then the Forecast page."""
+    import runpy
+    import streamlit as st
+    from streamlit_app.lib.key_gate import render_key_gate
+    st.session_state["live_client"] = render_key_gate()
+    runpy.run_path(st.session_state["forecast_page"])
+
+
+class TestStep5bSignOff:
+    """The Sign-off section on the Forecast page, from run to FINAL."""
+
+    def test_5b_no_section_before_a_result(self, downloads):
+        # No key, so no commentary: nothing to sign, and the PDF is a DRAFT
+        at = _app("pages/forecast.py")
+        at.run()
+        assert not at.exception
+        assert _section(at) == [] and not _boxes(at) and not _sign_buttons(at)
+        assert _labels(at) == ["Download the DRAFT PDF", "Download CSV"]
+        assert "DRAFT: not signed off" in _pdf_lines(downloads(at, "Download the DRAFT PDF"))
+        # A key and a re-forecast without commentary: still nothing to sign
+        at.session_state["live_client"] = _CommentaryClient()
+        at.run()
+        _click(at, "Re-forecast")
+        assert _section(at) == [] and not _sign_buttons(at)
+        # The worked example keeps its content: no section, no download
+        example = at.tabs[0]
+        assert not [m for m in example.markdown if "Sign-off" in m.value]
+        assert not example.get("download_button") and not example.text_input
+
+    def test_5b_from_run_to_final(self, downloads):
+        from src.signoff import (
+            NAME_REFUSAL, SCOPE_NOTE, WORD_HELP, WORD_LABEL, WORD_REFUSAL, when_text,
+        )
+        at = _live()
+        _click(at, "Write commentary")
+        run = at.tabs[1]
+        # At the level of the live result's sections: after Downloads, the
+        # last thing before the Session audit
+        headings = [m.value for m in run.markdown if m.value.startswith("#")]
+        assert headings[-3:] == ["#### Data Flags", "#### Downloads", "#### Sign-off"]
+        section = _section(at)
+        assert section == [
+            ("markdown", "#### Sign-off"), ("markdown", _SIGNING_MEANS),
+            ("markdown", _DRAFT_CHIP), ("markdown", "Nothing is outstanding."),
+            ("text_input", "Reviewer name"), ("text_input", WORD_LABEL),
+            ("button", "Sign off"), ("caption", SCOPE_NOTE)]
+        nodes = list(run.children.values())
+        assert nodes[-len(section) - 1].value == "#### Sign-off"
+        assert nodes[-1].label == "Session audit (1 run)"
+        assert [t.help for t in run.text_input if t.key == _SIGN_BOX] == [WORD_HELP]
+        (button,) = _sign_buttons(at)
+        assert button.proto.type == "primary" and not button.disabled
+        assert _labels(at) == ["Download the DRAFT PDF", "Download CSV"]
+        draft = _pdf_lines(downloads(at, "Download the DRAFT PDF"))
+        # Near the top: under the cover, before the first section
+        assert "0 flag(s) DRAFT: not signed off FORECAST OVERVIEW" in draft
+
+        # Refused: no name, a wrong word, the word in lower case. Each stays a DRAFT.
+        for name, word, refusal in [("   ", "SIGN", NAME_REFUSAL),
+                                    ("José Núñez", "SIGNED", WORD_REFUSAL),
+                                    ("José Núñez", "sign", WORD_REFUSAL)]:
+            _sign(at, name, word)
+            assert [w.value for w in at.tabs[1].warning] == [refusal]
+            assert _section(at)[2] == ("markdown", _DRAFT_CHIP)
+            assert "_signoff" not in at.session_state
+            assert "status" not in at.session_state["forecast_audit"][0]
+            assert _labels(at)[0] == "Download the DRAFT PDF"
+
+        # Signed: FINAL and the signed line, read only, the FINAL PDF
+        _sign(at, "José Núñez", " SIGN ")
+        signed = at.session_state["_signoff"]
+        when = when_text(signed.signed_at)
+        line = "Signed off by José Núñez on {}.".format(when)
+        assert _section(at) == [
+            ("markdown", "#### Sign-off"), ("markdown", _SIGNING_MEANS),
+            ("markdown", "{}&nbsp; {}".format(_FINAL_CHIP, line)),
+            ("caption", SCOPE_NOTE)]
+        assert not at.tabs[1].warning and not _boxes(at) and not _sign_buttons(at)
+        assert _labels(at) == ["Download the FINAL PDF", "Download CSV"]
+        final = _pdf_lines(downloads(at, "Download the FINAL PDF"))
+        assert ("0 flag(s) FINAL: signed off by José Núñez on {} FORECAST "
+                "OVERVIEW".format(when)) in final
+        assert "DRAFT: not signed off" not in final
+
+        # The run's session audit row carries the sign-off, and the Session
+        # audit shows it on that row
+        (row,) = at.session_state["forecast_audit"]
+        assert {k: row[k] for k in ("status", "signed_off_by", "signed_off_at",
+                                    "acknowledged_at_sign_off")} == {
+            "status": "final", "signed_off_by": "José Núñez",
+            "signed_off_at": signed.signed_at.isoformat(),
+            "acknowledged_at_sign_off": []}
+        assert row["has_commentary"] and row["tokens_out"] == 612
+        assert row["timestamp"] == at.session_state["_commentary_run"]
+        assert "{}&nbsp; {}".format(_FINAL_CHIP, line) in [
+            m.value for m in _audit_expander(at).markdown]
+
+    def test_5b_outstanding_items_are_the_review_reasons(self):
+        at = _live(_CommentaryClient(output_tokens=150, stop_reason="max_tokens"))
+        at.number_input(key="value_cogs").set_value(120.0).run()
+        _click(at, "Re-forecast")
+        _click(at, "Write commentary")
+        assert [m.value for m in at.tabs[1].markdown if "Human review" in m.value] == [
+            '<div class="sc-exp-caution">Human review recommended: 6 data flag(s) '
+            'raised; commentary was truncated; unusually short commentary (150 '
+            'tokens).</div>']
+        items = ["6 data flag(s) raised.", "Commentary was truncated.",
+                 "Unusually short commentary (150 tokens)."]
+        assert _section(at)[3:5] == [
+            ("markdown", "Outstanding before you sign:"),
+            ("markdown", "1. {}\n2. {}\n3. {}".format(*items))]
+        # Flags never block signing; the row keeps what was outstanding
+        _sign(at, "A. Reviewer")
+        assert _section(at)[2][1].startswith(_FINAL_CHIP)
+        (row,) = at.session_state["forecast_audit"]
+        assert row["requires_review"] and row["acknowledged_at_sign_off"] == items
+        assert "Acknowledged at sign-off: " + " ".join(items) in [
+            c.value for c in _audit_expander(at).caption]
+
+    def test_5b_a_second_signoff_is_refused(self):
+        from src.signoff import ALREADY_SIGNED
+        at = _live()
+        _click(at, "Write commentary")
+        _sign(at)
+        signed, result = at.session_state["_signoff"], at.session_state["_signoff_for"]
+        # The page offers no second Sign off: FINAL is read only
+        assert not _sign_buttons(at) and not _boxes(at)
+        # And the rule refuses one: a second click that lands after the
+        # first, on the button as it was drawn before the first took effect
+        del at.session_state["_signoff"]
+        del at.session_state["_signoff_for"]
+        at.run()
+        at.text_input(key=_SIGN_BOX).input("SIGN")
+        at.session_state["_signoff"] = signed
+        at.session_state["_signoff_for"] = result
+        at.button(key=_SIGN_BUTTON).click().run()
+        assert not at.exception
+        assert [w.value for w in at.tabs[1].warning] == [ALREADY_SIGNED]
+        assert at.session_state["_signoff"] == signed
+        assert _section(at)[2][1].startswith(_FINAL_CHIP)
+        (row,) = at.session_state["forecast_audit"]
+        assert row["signed_off_at"] == signed.signed_at.isoformat()
+
+    def test_5b_changed_drivers_wait_for_a_reforecast(self):
+        from src.signoff import SCOPE_NOTE, STALE_CAPTION
+        at = _live()
+        at.number_input(key="value_r&d_expense").set_value(10.0).run()
+        _click(at, "Re-forecast")
+        _click(at, "Write commentary")
+        assert not _sign_buttons(at)[0].disabled
+        # A driver changed, Re-forecast not pressed: the result on screen
+        # was made from other inputs, so Sign off waits, with the caption
+        at.number_input(key="value_r&d_expense").set_value(6.0).run()
+        (button,) = _sign_buttons(at)
+        assert button.disabled
+        assert _section(at)[-3:] == [("button", "Sign off"), ("caption", STALE_CAPTION),
+                                     ("caption", SCOPE_NOTE)]
+        # Back to the drivers of the forecast on screen: Sign off is offered
+        at.number_input(key="value_r&d_expense").set_value(10.0).run()
+        assert not _sign_buttons(at)[0].disabled
+        assert ("caption", STALE_CAPTION) not in _section(at)
+        # A click that lands together with a driver change does not sign
+        at.text_input(key=_NAME_BOX).input("A. Reviewer").run()
+        at.text_input(key=_SIGN_BOX).input("SIGN").run()
+        at.number_input(key="value_revenue").set_value(15.0)
+        at.button(key=_SIGN_BUTTON).click().run()
+        assert not at.exception
+        assert "_signoff" not in at.session_state
+        assert "status" not in at.session_state["forecast_audit"][0]
+        assert _sign_buttons(at)[0].disabled
+        assert _section(at)[2] == ("markdown", _DRAFT_CHIP)
+
+    def test_5b_a_new_run_is_a_new_draft(self, downloads):
+        at = _live()
+        _click(at, "Write commentary")
+        _sign(at)
+        first = dict(at.session_state["forecast_audit"][0])
+        # Re-forecast on changed drivers: a new forecast, its commentary
+        # cleared, nothing to sign; the PDF is a DRAFT again
+        at.number_input(key="value_revenue").set_value(15.0).run()
+        _click(at, "Re-forecast")
+        assert _section(at) == [] and "_signoff" not in at.session_state
+        assert _labels(at) == ["Download the DRAFT PDF", "Download CSV"]
+        assert "DRAFT: not signed off" in _pdf_lines(downloads(at, "Download the DRAFT PDF"))
+        # Write commentary: a new DRAFT, the name still filled in, SIGN cleared
+        _click(at, "Write commentary")
+        assert _section(at)[2] == ("markdown", _DRAFT_CHIP)
+        assert _boxes(at) == [(_NAME_BOX, "José Núñez"), (_SIGN_BOX, "")]
+        at.text_input(key=_SIGN_BOX).input("SIGN").run()
+        at.button(key=_SIGN_BUTTON).click().run()
+        assert _section(at)[2][1].startswith(_FINAL_CHIP)
+        # Each run keeps its own sign-off
+        newer, older = at.session_state["forecast_audit"]
+        assert newer["status"] == older["status"] == "final"
+        assert newer["timestamp"] != older["timestamp"] == first["timestamp"]
+        assert older["signed_off_at"] == first["signed_off_at"]
+
+    def test_5b_new_commentary_on_the_same_forecast_is_a_new_draft(self):
+        client = _CommentaryClient()
+        at = _live(client)
+        _click(at, "Write commentary")
+        _sign(at, "A. Reviewer")
+        # A re-forecast away and back clears the commentary and returns the
+        # same forecast. Written again, word for word the same, the
+        # commentary is still a new run to sign.
+        at.number_input(key="value_revenue").set_value(15.0).run()
+        _click(at, "Re-forecast")
+        at.number_input(key="value_revenue").set_value(12.0).run()
+        _click(at, "Re-forecast")
+        assert _section(at) == []
+        _click(at, "Write commentary")
+        assert client.calls == 2
+        assert _section(at)[2] == ("markdown", _DRAFT_CHIP)
+        assert _boxes(at) == [(_NAME_BOX, "A. Reviewer"), (_SIGN_BOX, "")]
+        newer, older = at.session_state["forecast_audit"]
+        assert newer["fingerprint"] == older["fingerprint"]
+        assert "status" not in newer and older["status"] == "final"
+
+    def test_5b_the_same_result_stays_final(self):
+        at = _live()
+        _click(at, "Write commentary")
+        _sign(at, "A. Reviewer")
+        # Re-forecast on unchanged drivers: the same forecast, the same
+        # commentary and the same PDF, so the same result, still FINAL
+        _click(at, "Re-forecast")
+        assert at.tabs[1].success[0].value == "Showing adjusted forecast."
+        assert _section(at)[2][1].startswith(_FINAL_CHIP)
+        # A driver changed without Re-forecast: the result on screen is
+        # still the one signed
+        at.number_input(key="value_revenue").set_value(15.0).run()
+        assert _section(at)[2][1].startswith(_FINAL_CHIP)
+        assert _labels(at)[0] == "Download the FINAL PDF"
+
+    def test_5b_a_key_change_on_its_own_keeps_the_signoff(self):
+        # The key is not an input of the result: it lets Write commentary
+        # call the model and nothing else, so a new or removed key leaves
+        # the signed result as it is
+        from streamlit.testing.v1 import AppTest
+        with patch("streamlit_app.lib.key_gate.build_client",
+                   side_effect=lambda key: _CommentaryClient()):
+            at = AppTest.from_function(_gate_then_forecast, default_timeout=180)
+            at.session_state["forecast_page"] = str(APP_DIR / "pages" / "forecast.py")
+            at.run()
+            at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
+            _click(at, "Write commentary")
+            _sign(at, "A. Reviewer")
+            for key in (TEST_KEY[:-1] + "y", ""):
+                at.sidebar.text_input(key="byo_api_key").input(key).run()
+                assert not at.exception
+                assert _section(at)[2][1].startswith(_FINAL_CHIP)
+                assert _labels(at)[0] == "Download the FINAL PDF"
+            assert at.session_state["live_client"] is None
+
+    def test_5b_names_print_safely(self, downloads):
+        import html
+        from src.signoff import NAME_LIMIT, clean_name, pdf_name, when_text
+        at = _live()
+        _click(at, "Write commentary")
+        typed = "Zoë 李 <b>R&D</b>\x07" + "x" * 100
+        _sign(at, typed)
+        signed = at.session_state["_signoff"]
+        assert signed.name == clean_name(typed) and len(signed.name) == NAME_LIMIT
+        assert signed.name.startswith("Zoë 李 <b>R&D</b>xxx")
+        # On screen as typed, escaped; in the PDF as its fonts print it, never as markup
+        assert _section(at)[2] == ("markdown", "{}&nbsp; {}".format(
+            _FINAL_CHIP, html.escape(signed.line)))
+        final = "".join(_pdf_lines(downloads(at, "Download the FINAL PDF")).split())
+        status = "FINAL: signed off by {} on {}".format(
+            pdf_name(signed.name), when_text(signed.signed_at))
+        assert status.startswith("FINAL: signed off by Zoë ? <b>R&D</b>xxx")
+        assert "".join(status.split()) in final
+
+    def test_5b_cli_and_example_pdfs_print_no_status_line(
+            self, full_df, pnl_df, drivers_df, flags, last_actual, forecast_periods):
+        import inspect
+        from src.signoff import DRAFT_PDF_LINE
+        from src.step4_output_writer import build_pdf_bytes, write_pdf
+        from streamlit_app.lib.example_run import EXAMPLE
+        args = (full_df, pnl_df, drivers_df, flags, last_actual, forecast_periods)
+        kwargs = dict(commentary=EXAMPLE["commentary"], tok_in=EXAMPLE["tokens_in"],
+                      tok_out=EXAMPLE["tokens_out"])
+        plain = _pdf_lines(build_pdf_bytes(*args, **kwargs))
+        assert "signed off" not in plain and "DRAFT" not in plain and "FINAL" not in plain
+        # The status line is the only difference, and only when it is asked for
+        draft = _pdf_lines(build_pdf_bytes(*args, **kwargs, status_line=DRAFT_PDF_LINE))
+        assert draft != plain and draft.replace(" DRAFT: not signed off", "", 1) == plain
+        # The CLI's PDF never asks for one
+        assert "status_line" not in inspect.getsource(write_pdf)
+
+    def test_5b_wording(self):
+        at = _app("Home.py")
+        at.run()
+        text = [m.value for m in at.main.markdown]
+        what = text[text.index("#### What it does") + 1]
+        assert what.splitlines()[-1] == (
+            "- Produces a PDF report, a DRAFT until a named reviewer signs it, and a "
+            "CSV of the P&L.")
+        promise = text[text.index("#### The governance promise") + 1]
+        assert promise.splitlines()[-1] == (
+            "- **The reviewer signs.** Nothing is final until a named reviewer reads "
+            "it and signs.")
+        from streamlit_app.lib.governance_flow import governance_flow_svg
+        from streamlit_app.lib.governance_lifecycle import governance_lifecycle_svg
+        flow = governance_flow_svg()
+        assert "YOU SIGN OFF" in flow
+        assert "You set the drivers and sign off the output." in flow
+        built = (APP_DIR / "pages" / "how_its_built.py").read_text(encoding="utf-8")
+        assert ('"This live demo stops at a typed sign-off kept for the session; it still "\n'
+                '    "does not store or lock anything') in built
+        stale = ["stops at flagging for review", "no sign-off step", "nobody approves",
+                 "A person reviews", "you approve", "approves the output",
+                 "you review the result", "review the output"]
+        for path in [APP_DIR.parent / "README.md", *APP_DIR.rglob("*.py"),
+                     *(APP_DIR.parent / "src").glob("*.py")]:
+            source = path.read_text(encoding="utf-8")
+            assert not [s for s in stale if s in source], path.name
+        # The lifecycle diagram is the production design: it still approves and locks
+        lifecycle = governance_lifecycle_svg()
+        assert "YOU APPROVE" in lifecycle and "LOCKED" in lifecycle

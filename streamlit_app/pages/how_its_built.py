@@ -58,22 +58,24 @@ st.write(
     "You set each driver's method and value; Python computes the entire P&L "
     "from those drivers with the model absent from the calculation; the model "
     "then narrates the result it was handed; deterministic rules flag anything "
-    "that needs scrutiny; and you review the output. If you change a driver "
-    "after commentary was written, the tool clears the stale commentary and "
-    "requires a fresh run.")
+    "that needs scrutiny; and you review and sign off the output. If you "
+    "change a driver after commentary was written, the tool clears the stale "
+    "commentary and requires a fresh run.")
 
 st.markdown("**Every commentary run leaves a record.**")
 st.write(
     "Each commentary run is recorded in the session audit trail with a "
     "fingerprint of the exact P&L, the effective drivers, dual hashes of the "
-    "input files, token counts, cost, and whether review was recommended. A "
-    "re-forecast without commentary is not recorded. The point is that a "
+    "input files, token counts, cost, and whether review was recommended; "
+    "once a reviewer signs it off, the run's record also carries the name, "
+    "the time and what was outstanding at sign-off. A re-forecast without "
+    "commentary is not recorded. The point is that a "
     "forecast is reproducible and reviewable after the fact, which is what a "
     "finance function needs before it will rely on any tool.")
 
 st.info(
     "In one line: you set the drivers, Python calculates every figure, the "
-    "model writes the commentary, and you review the result. The intelligence "
+    "model writes the commentary, and you sign off the result. The intelligence "
     "is at the edges, and the numbers in the middle are deterministic and "
     "checkable.")
 
@@ -85,9 +87,9 @@ st.write(
     "becomes the immutable record: it is what everyone reads afterwards, "
     "and it cannot be edited. A later change is issued as a new, "
     "separately approved version, and the original still stands unchanged. "
-    "This live demo stops at flagging for review; it does not store or lock "
-    "anything, so no data is retained. The lifecycle diagram above shows the "
-    "full model this design is built towards.")
+    "This live demo stops at a typed sign-off kept for the session; it still "
+    "does not store or lock anything, so no data is retained. The lifecycle "
+    "diagram above shows the full model this design is built towards.")
 
 # -- Part 2: the technical detail (engineer / evaluator) ----------------------
 st.markdown("---")
@@ -132,7 +134,8 @@ st.write(
     "defaults returns to the base forecast at once. The commentary "
     "fingerprint is checked on every render. Downloads build the PDF and CSV "
     "in memory with the same builders the CLI uses, but the two PDFs differ: "
-    "the web PDF adds an Operational inputs section that the CLI PDF leaves "
+    "the web PDF adds an Operational inputs section and a sign-off status "
+    "line (DRAFT, or FINAL with the reviewer's name) that the CLI PDF leaves "
     "out. Tests cover the engine's override handling (an R&D override "
     "leaves the other lines unchanged, and restating a default reproduces "
     "the base forecast) and the shared builders; no test compares the web "
@@ -143,8 +146,9 @@ st.write(
     "The suite covers the forecast engine, the driver controls mapping, "
     "the commentary fingerprint and section parsing, the shared output "
     "builders (PDF with and without commentary, CSV content, data hashes), "
-    "the requires-review logic across five branches, and the audit record "
-    "shape. The web layer reuses the same tested pipeline unchanged; the "
+    "the requires-review logic across five branches, the audit record "
+    "shape, and the sign-off rule with the Sign-off section from run to "
+    "FINAL. The web layer reuses the same tested pipeline unchanged; the "
     "pages orchestrate and render, they never recompute.")
 
 st.markdown("**Built for a public, keyless demo.**")

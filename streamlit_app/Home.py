@@ -42,7 +42,8 @@ def _home_page():
         "drivers, and lets you change the driver of any line and re-forecast.\n"
         "- Writes commentary on the result with the model (Claude, via the "
         "Anthropic API) and your own key.\n"
-        "- Produces a PDF report and a CSV of the P&L.")
+        "- Produces a PDF report, a DRAFT until a named reviewer signs it, and "
+        "a CSV of the P&L.")
 
     st.markdown("#### The governance promise")
     st.markdown(
@@ -53,8 +54,8 @@ def _home_page():
         "- **The model narrates.** It writes about the calculated figures and "
         "cannot change them. This version does not check the numbers in its "
         "wording.\n"
-        "- **A person reviews.** This version has no sign-off step on the web, so "
-        "nothing here is signed or final.")
+        "- **The reviewer signs.** Nothing is final until a named reviewer reads it "
+        "and signs.")
 
     st.markdown("#### Pages")
     st.page_link(HOW_MODEL_PAGE, label="How the model works: each line's driver, "

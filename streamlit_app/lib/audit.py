@@ -3,7 +3,8 @@
 # =============================================================================
 # Follows the same pattern as Projects 3 and 4: session state, no disk writes,
 # cleared when the browser tab closes. The build_audit_record function is pure
-# (no Streamlit dependency) so it can be tested headless.
+# (no Streamlit dependency) so it can be tested headless. A commentary run's
+# row gains its sign-off when a reviewer signs that run (add_signoff).
 # =============================================================================
 
 from datetime import datetime, timezone
@@ -82,3 +83,14 @@ def record_run(**kwargs):
 def get_runs():
     """Return all audit records (newest first)."""
     return st.session_state.get(AUDIT_KEY, [])
+
+
+def add_signoff(run_timestamp, signoff_record):
+    """Add a sign-off to the commentary run it was made for, found by the
+    run's timestamp. signoff_record is SignOff.record(...) from
+    src/signoff.py: who, when, and what was outstanding at sign-off."""
+    for run in get_runs():
+        if run["timestamp"] == run_timestamp:
+            run.update(signoff_record)
+            return run
+    return None

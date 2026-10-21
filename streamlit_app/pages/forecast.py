@@ -13,10 +13,23 @@
 #   runs the engine. No widget relies on value= to carry state across reruns;
 #   method-selector changes trigger a rerun for relabelling, and the value
 #   inputs survive that rerun via their keys.
+#
+# Sign-off (after Project 6; the rule and its messages live in
+# src/signoff.py): once the forecast on screen has commentary, the live run
+# ends with a Sign-off section. A named reviewer types SIGN and the result is
+# FINAL, in the PDF and in that run's session audit row. The sign-off holds
+# only for the result it was made for: a Re-forecast that changes the
+# figures, or a new Write commentary, is a new DRAFT. While the drivers in
+# the panel differ from the forecast on screen, Sign off waits for a
+# Re-forecast.
 # =============================================================================
 
+import hashlib
+import html
+import json
 import math
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -27,7 +40,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from streamlit_app.lib.theme import inject_css, header_html
+from streamlit_app.lib.theme import inject_css, header_html, status_chip_html
 from streamlit_app.lib.driver_menu import (
     LINE_DEFAULTS, ALLOWED_METHODS, METHOD_LABEL, METHOD_VALUE_SHAPE,
 )
@@ -40,11 +53,15 @@ from streamlit_app.lib.commentary import (
 )
 from streamlit_app.lib.cost import format_cost
 from streamlit_app.lib.errors import friendly_message, model_failure_message
-from streamlit_app.lib.audit import record_run, get_runs
+from streamlit_app.lib.audit import record_run, get_runs, add_signoff
 from streamlit_app.lib.example_run import EXAMPLE
 from src.step3_ai_engine import build_prompt
 from src.step4_output_writer import (
     build_pdf_bytes, build_csv_bytes, compute_data_hashes, check_requires_review,
+)
+from src.signoff import (
+    FINAL, SCOPE_NOTE, STALE_CAPTION, WORD_HELP, WORD_LABEL, SignOff,
+    pdf_status_line, sign_off,
 )
 
 from src.step1_data_loader import (
@@ -344,6 +361,12 @@ _VALUE_LABELS = {
 }
 
 
+# The live commentary: its text, token counts, the forecast it was written
+# for, its stop reason, and its run (the run's audit row timestamp)
+_COMMENTARY_KEYS = ("_commentary_text", "_commentary_cost", "_commentary_fp",
+                    "_commentary_stop", "_commentary_run")
+
+
 def _init_state():
     """Seed session state with defaults on first load."""
     if "_drv_init" in st.session_state:
@@ -392,8 +415,7 @@ def _reset_to_defaults():
     st.session_state["_adjusted"] = False
     st.session_state.pop("_adj_result", None)
     st.session_state.pop("_adj_overrides", None)
-    for k in ("_commentary_text", "_commentary_cost", "_commentary_fp",
-              "_commentary_stop"):
+    for k in _COMMENTARY_KEYS:
         st.session_state.pop(k, None)
 
 
@@ -513,6 +535,160 @@ def _commentary_cards(text):
             ),
             unsafe_allow_html=True,
         )
+
+
+def _review_reasons(flags, stop_reason, tok_out, has_commentary):
+    """Why the run needs a person's review, as "Human review recommended"
+    lists it; empty when check_requires_review finds no reason."""
+    if not check_requires_review(flags, stop_reason, tok_out, has_commentary):
+        return []
+    reasons = []
+    if flags:
+        reasons.append("{} data flag(s) raised".format(len(flags)))
+    if stop_reason == "max_tokens":
+        reasons.append("commentary was truncated")
+    if has_commentary and tok_out < 200:
+        reasons.append("unusually short commentary ({} tokens)".format(tok_out))
+    return reasons
+
+
+# ---------------------------------------------------------------------------
+# Sign-off (after Project 6: the rule and its messages live in src/signoff.py)
+# ---------------------------------------------------------------------------
+
+# The sign-off that stands (a SignOff) and the result it was made for (a
+# fingerprint); the reviewer name box, kept under a plain key as well, so the
+# name survives a run with no section to draw; the SIGN box; the last refusal
+_SIGNED_KEY = "_signoff"
+_SIGNED_FOR_KEY = "_signoff_for"
+_REVIEWER_KEY = "_signoff_reviewer"
+_NAME_KEY = "_signoff_name"
+_SIGN_KEY = "_signoff_sign"
+_REFUSAL_KEY = "_signoff_refusal"
+
+_SIGNING_MEANS = (
+    "Signing says you have read the result against the figures above. The "
+    "figures come from Python. This version does not check the numbers in the "
+    "model's wording.")
+
+
+def _same_overrides(a, b):
+    """Two sets of driver overrides that give the same forecast: the same
+    method on every line, and the same value."""
+    a, b = a or {}, b or {}
+    return a.keys() == b.keys() and all(
+        a[line]["method"] == b[line]["method"] and math.isclose(
+            float(a[line]["value"]), float(b[line]["value"]),
+            rel_tol=1e-9, abs_tol=1e-12)
+        for line in a)
+
+
+def _inputs_changed():
+    """The driver panel no longer matches the drivers of the forecast on
+    screen: a driver changed and Re-forecast has not been pressed since."""
+    if st.session_state.get("_adjusted") and "_adj_result" in st.session_state:
+        shown = st.session_state.get("_adj_overrides")
+    else:
+        shown = build_overrides({
+            line: (d["method"], to_display(d["method"], d["value"]))
+            for line, d in LINE_DEFAULTS.items()})
+    return not _same_overrides(build_overrides(_collect_state()), shown)
+
+
+def _result_fingerprint(pnl_df, drivers_df, flags):
+    """The result a sign-off is for, as one hash: the commentary run, its
+    text and token counts, and the forecast's figures, flags and driver
+    table, as the live PDF prints them. None while there is no commentary
+    on screen, so nothing to sign."""
+    if "_commentary_text" not in st.session_state:
+        return None
+    drivers = [[row["line_item"], row["driver_type"],
+                round(float(row["driver_value"]), 9), str(row.get("note", ""))]
+               for _, row in drivers_df.iterrows()]
+    text = json.dumps({
+        "run": st.session_state.get("_commentary_run"),
+        "commentary": st.session_state["_commentary_text"],
+        "tokens": list(st.session_state["_commentary_cost"]),
+        "forecast": forecast_fingerprint(pnl_df),
+        "flags": list(flags),
+        "drivers": drivers,
+    }, sort_keys=True, default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _standing_signoff(result):
+    """The sign-off that stands for the result on screen, or None. One made
+    for another result (a Re-forecast that changed the figures, or a new
+    Write commentary) no longer applies: the name stays filled in and the
+    SIGN box is cleared."""
+    signed = st.session_state.get(_SIGNED_KEY)
+    if signed is not None and st.session_state.get(_SIGNED_FOR_KEY) != result:
+        del st.session_state[_SIGNED_KEY]
+        del st.session_state[_SIGNED_FOR_KEY]
+        st.session_state[_NAME_KEY] = signed.name
+        st.session_state[_SIGN_KEY] = ""
+        signed = None
+    return signed
+
+
+def _keep_name():
+    st.session_state[_NAME_KEY] = st.session_state.get(_REVIEWER_KEY, "")
+
+
+def _sign_off(result, run, outstanding):
+    """The Sign off button (on_click, as in Project 6). The rule decides; the
+    page keeps the sign-off and the result it was made for, and adds it to
+    that run's session audit row."""
+    if _inputs_changed():
+        return    # a click after a driver changed: the button now waits
+    signed, refusal = sign_off(
+        st.session_state.get(_REVIEWER_KEY), st.session_state.get(_SIGN_KEY),
+        already_signed=(_SIGNED_KEY in st.session_state
+                        and st.session_state.get(_SIGNED_FOR_KEY) == result))
+    if refusal:
+        st.session_state[_REFUSAL_KEY] = refusal
+        return
+    st.session_state[_SIGNED_KEY] = signed
+    st.session_state[_SIGNED_FOR_KEY] = result
+    add_signoff(run, signed.record(outstanding))
+
+
+def _render_signoff(result, signed, outstanding, stale):
+    """The Sign-off section: DRAFT with the boxes and the button, or FINAL
+    and read only."""
+    refusal = st.session_state.pop(_REFUSAL_KEY, None)
+    st.markdown("#### Sign-off")
+    st.markdown(_SIGNING_MEANS)
+
+    if signed is not None:
+        st.markdown("{}&nbsp; {}".format(
+            status_chip_html("final"), html.escape(signed.line)),
+            unsafe_allow_html=True)
+        if refusal:
+            st.warning(refusal)
+        st.caption(SCOPE_NOTE)
+        return
+
+    st.markdown(status_chip_html("draft"), unsafe_allow_html=True)
+    if outstanding:
+        st.markdown("Outstanding before you sign:")
+        st.markdown("\n".join("{}. {}".format(i, line) for i, line
+                              in enumerate(outstanding, start=1)))
+    else:
+        st.markdown("Nothing is outstanding.")
+    if _NAME_KEY in st.session_state:
+        st.session_state[_REVIEWER_KEY] = st.session_state[_NAME_KEY]
+    st.text_input("Reviewer name", key=_REVIEWER_KEY, on_change=_keep_name)
+    st.text_input(WORD_LABEL, key=_SIGN_KEY, help=WORD_HELP)
+    st.button("Sign off", key="_signoff_button", type="primary",
+              on_click=_sign_off,
+              args=(result, st.session_state.get("_commentary_run"), outstanding),
+              disabled=stale)
+    if stale:
+        st.caption(STALE_CAPTION)
+    st.caption(SCOPE_NOTE)
+    if refusal:
+        st.warning(refusal)
 
 
 # ---------------------------------------------------------------------------
@@ -705,8 +881,7 @@ with _tab_run:
     _stored_fp = st.session_state.get("_commentary_fp")
 
     if _stored_fp is not None and _stored_fp != _fp:
-        for _k in ("_commentary_text", "_commentary_cost", "_commentary_fp",
-                   "_commentary_stop"):
+        for _k in _COMMENTARY_KEYS:
             st.session_state.pop(_k, None)
 
     _live_client = st.session_state.get("live_client")
@@ -747,7 +922,7 @@ with _tab_run:
                         st.session_state["_commentary_stop"] = _resp.stop_reason
                         st.session_state["_commentary_fp"] = _fp
                         _ah, _dh = compute_data_hashes()
-                        record_run(
+                        _row = record_run(
                             eff_drivers_df=_eff_drivers,
                             fingerprint=_fp,
                             actuals_hash=_ah,
@@ -759,6 +934,8 @@ with _tab_run:
                             stop_reason=_resp.stop_reason,
                             overrides=_overrides,
                         )
+                        # The run a sign-off of this commentary belongs to
+                        st.session_state["_commentary_run"] = _row["timestamp"]
                         st.rerun()
                 except Exception as exc:
                     st.error(friendly_message(exc))
@@ -772,19 +949,11 @@ with _tab_run:
 
     _stop_reason = st.session_state.get("_commentary_stop")
     _cmnt_tok_out = st.session_state.get("_commentary_cost", (0, 0))[1]
-    _needs_review = check_requires_review(
+    _reasons = _review_reasons(
         flags, _stop_reason, _cmnt_tok_out, _has_commentary,
     )
 
-    if _needs_review:
-        _reasons = []
-        if flags:
-            _reasons.append("{} data flag(s) raised".format(len(flags)))
-        if _stop_reason == "max_tokens":
-            _reasons.append("commentary was truncated")
-        if _has_commentary and _cmnt_tok_out < 200:
-            _reasons.append(
-                "unusually short commentary ({} tokens)".format(_cmnt_tok_out))
+    if _reasons:
         st.markdown(
             '<div class="sc-exp-caution">'
             "Human review recommended: {}.</div>".format("; ".join(_reasons)),
@@ -810,6 +979,11 @@ with _tab_run:
     _dl_commentary = st.session_state.get("_commentary_text")
     _dl_tok = st.session_state.get("_commentary_cost", (0, 0))
 
+    # The result on screen and the sign-off that stands for it, if any: the
+    # PDF prints its status line, DRAFT or FINAL
+    _result = _result_fingerprint(pnl_df, _dl_drivers, flags)
+    _signed = _standing_signoff(_result)
+
     try:
         _pdf_bytes = build_pdf_bytes(
             full_df, pnl_df, _dl_drivers, flags,
@@ -817,6 +991,7 @@ with _tab_run:
             commentary=_dl_commentary,
             tok_in=_dl_tok[0], tok_out=_dl_tok[1],
             headcount_df=_headcount_df, customer_df=_customer_df,
+            status_line=pdf_status_line(_signed),
         )
     except Exception as exc:
         # A PDF that cannot be built must not take the CSV download with it
@@ -824,11 +999,14 @@ with _tab_run:
         st.error("The PDF report could not be built. " + friendly_message(exc))
     _csv_bytes = build_csv_bytes(pnl_df)
 
-    _dc1, _dc2, _ = st.columns([2, 2, 5])
+    # The PDF's column is wider than before, so "Download the DRAFT PDF" sits
+    # on one line; the CSV's column keeps its width
+    _dc1, _dc2, _ = st.columns([3, 2, 4])
     with _dc1:
         if _pdf_bytes is not None:
             st.download_button(
-                "Download PDF", data=_pdf_bytes,
+                "Download the FINAL PDF" if _signed is not None
+                else "Download the DRAFT PDF", data=_pdf_bytes,
                 file_name="forecast_report.pdf",
                 mime="application/pdf",
                 use_container_width=True,
@@ -847,6 +1025,14 @@ with _tab_run:
         with st.expander("Engine flags ({})".format(len(flags))):
             for f in flags:
                 st.write("- {}".format(f))
+
+    # ---- Sign-off (only once there is commentary to sign) -----------------
+
+    if _result is not None:
+        _render_signoff(
+            _result, _signed,
+            ["{}{}.".format(r[0].upper(), r[1:]) for r in _reasons],
+            _inputs_changed())
 
     # ---- Session audit ----------------------------------------------------
 
@@ -882,3 +1068,13 @@ with _tab_run:
             st.caption("Driver hash: {}".format(_run["driver_hash"][:30]))
             if _run["requires_review"]:
                 st.warning("Review recommended")
+            if _run.get("status") == FINAL:
+                # The run's sign-off, in the rule's own signed line
+                _row_signed = SignOff(_run["signed_off_by"], datetime.fromisoformat(
+                    _run["signed_off_at"]))
+                st.markdown("{}&nbsp; {}".format(
+                    status_chip_html("final"), html.escape(_row_signed.line)),
+                    unsafe_allow_html=True)
+                if _run["acknowledged_at_sign_off"]:
+                    st.caption("Acknowledged at sign-off: " + " ".join(
+                        _run["acknowledged_at_sign_off"]))

@@ -81,6 +81,9 @@ S_TBL_SM_HDR = ParagraphStyle("TblSmHdr", fontName="Helvetica-Bold", fontSize=7,
                 textColor=DARK_BLUE, leading=9)
 S_TBL_SM_NUM = ParagraphStyle("TblSmNum", fontName="Helvetica",      fontSize=7,
                 textColor=BODY_DARK, leading=9, alignment=TA_RIGHT)
+# The web PDF's sign-off status line, under the cover (src/signoff.py)
+S_STATUS  = ParagraphStyle("Status", fontName="Helvetica-Bold", fontSize=10,
+                textColor=DARK_BLUE, leading=14, alignment=TA_CENTER)
 
 NO_VALUE = "n/a"   # shown in a table cell that has no figure
 
@@ -1065,13 +1068,18 @@ def _monthly_pnl_table(full_df, last_actual, forecast_periods):
 def build_pdf_bytes(full_df, pnl_df, drivers_df, flags,
                     last_actual, forecast_periods,
                     commentary=None, tok_in=0, tok_out=0,
-                    headcount_df=None, customer_df=None):
+                    headcount_df=None, customer_df=None, status_line=None):
     """Build the forecast PDF and return its bytes.
 
     Shared builder used by both the CLI (write_pdf) and the web app.
     When commentary is None the overview, driver commentary, and key-risks
     sections are omitted, but the report is still valid: P&L, assumptions,
     chart, audit metadata, and flags.
+
+    status_line is the web app's sign-off status (pdf_status_line from
+    src/signoff.py: "DRAFT: not signed off", or the FINAL line with the
+    reviewer's name), printed under the cover. None, the default, prints
+    no status line, so the CLI's PDF is as it was.
     """
     import io
 
@@ -1093,6 +1101,9 @@ def build_pdf_bytes(full_df, pnl_df, drivers_df, flags,
         DEFAULT_ENTITY, last_actual, forecast_periods,
         ts, tok_in, tok_out, len(flags), has_commentary=has_commentary,
     ))
+    if status_line is not None:
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(Paragraph(pdf_text(status_line), S_STATUS))
     story.append(Spacer(1, 0.4 * cm))
 
     # 2. Forecast Overview (only with commentary)

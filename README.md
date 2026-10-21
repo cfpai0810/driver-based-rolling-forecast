@@ -227,7 +227,7 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               128 tests
+  test_pipeline.py               135 tests
 ```
 
 ---
@@ -272,7 +272,7 @@ so any run is fully reproducible.
 
 ## Test suite
 
-128 tests, no real API calls:
+135 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt
@@ -286,7 +286,10 @@ section parsing, the PDF and CSV builders, the session audit record, the
 worked example and the governance diagrams, the key gate, plain messages
 for failed model calls, and the Home and Forecast pages (the worked example
 button, the KPI tiles, the driver notes after an override, and the
-tabular-figures rule in the theme). No test checks the charts.
+tabular-figures rule in the theme), and the series look: the theme colour,
+a banner on every page, the status chips, the Home blocks and page links,
+the page titles and addresses, the tab order and the browser tab icon. No
+test checks the charts.
 
 ---
 

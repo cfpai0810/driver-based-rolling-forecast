@@ -18,14 +18,21 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from streamlit_app.lib.theme import inject_css
+from streamlit_app.lib.theme import inject_css, header_html
 from streamlit_app.lib.governance_flow import governance_flow_svg
 from streamlit_app.lib.governance_lifecycle import governance_lifecycle_svg
 from streamlit_app.lib.pipeline_flow import pipeline_flow_svg
 
 st.markdown(inject_css(), unsafe_allow_html=True)
 
-st.markdown("### How it's built")
+st.markdown(header_html(
+    "How it's built",
+    "The governance, the pipeline and the tests behind the forecast."),
+    unsafe_allow_html=True)
+
+# Who owns each step of a run: the diagram that opened the Home page
+components.html(governance_flow_svg(), height=220, scrolling=False)
+
 st.write(
     "This tool was built on one principle: an AI system that touches financial "
     "numbers has to earn trust before it earns time. The sections below explain "
@@ -47,7 +54,6 @@ st.write(
 
 st.markdown("**The work happens in separated layers, and you open and close "
             "every one.**")
-components.html(governance_flow_svg(), height=220, scrolling=False)
 st.write(
     "You set each driver's method and value; Python computes the entire P&L "
     "from those drivers with the model absent from the calculation; the model "

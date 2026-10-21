@@ -14,75 +14,57 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import streamlit.components.v1 as components
-
-from streamlit_app.lib.theme import inject_css, DARK_BLUE
+from streamlit_app.lib.theme import inject_css, header_html
 from streamlit_app.lib.key_gate import render_key_gate
-from streamlit_app.lib.governance_flow import governance_flow_svg
 
 
 def _home_page():
     """Render the landing page content."""
     st.markdown(inject_css(), unsafe_allow_html=True)
 
-    st.markdown(
-        '<div class="sc-header">'
-        '<h1>Driver-Based Rolling Forecast</h1>'
-        '<p>A six-month P&amp;L forecast built from the drivers behind each '
-        'line, with AI commentary that explains the numbers without touching '
-        'them.</p>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(header_html(
+        "Driver-Based Rolling Forecast",
+        "A six-month P&L forecast built from the drivers behind each line, "
+        "with AI commentary that explains the numbers without touching them."),
+        unsafe_allow_html=True)
 
     # The committed worked example needs no key: it is the "View a worked
-    # example" tab on the Forecast page, which this flag opens
+    # example" tab on the Forecast page, its first tab, open on arrival
     if st.button("See the worked example"):
-        st.session_state[OPEN_EXAMPLE_TAB] = True
         st.switch_page(FORECAST_PAGE)
 
-    components.html(governance_flow_svg(), height=220, scrolling=False)
+    st.markdown("#### What it does")
+    st.markdown(
+        "- Reads eighteen months of actuals to June 2026 and the driver behind "
+        "each of the six forecast lines, with the hiring plan and the customer "
+        "targets behind two of them.\n"
+        "- Forecasts the second half of the year line by line from those "
+        "drivers, and lets you change the driver of any line and re-forecast.\n"
+        "- Writes commentary on the result with the model (Claude, via the "
+        "Anthropic API) and your own key.\n"
+        "- Produces a PDF report and a CSV of the P&L.")
 
-    st.markdown("#### What this does")
-    st.write(
-        "FP&A teams build rolling forecasts by projecting each P&L line from "
-        "its underlying driver: revenue from a seasonal growth rate, COGS from "
-        "a margin percentage, personnel from a headcount plan, and so on. This "
-        "tool automates that calculation and lets you adjust individual drivers "
-        "to see how the forecast responds, then calls Claude to narrate the "
-        "result in plain language.")
-    st.write(
-        "One principle holds the whole thing together: the language model reads "
-        "the computed forecast and writes the commentary, a deterministic "
-        "engine performs every calculation, and a person reviews the output. "
-        "The intelligence sits at the edges; the numbers in the middle are "
-        "computed the way a spreadsheet would compute them, and never by the "
-        "model.")
+    st.markdown("#### The governance promise")
+    st.markdown(
+        "- **Python forecasts.** Every figure in the tiles, the chart and the "
+        "tables is calculated in code, never by the model.\n"
+        "- **A rule marks for review.** Whether the output needs scrutiny is "
+        "decided by rules.\n"
+        "- **The model narrates.** It writes about the calculated figures and "
+        "cannot change them. This version does not check the numbers in its "
+        "wording.\n"
+        "- **A person reviews.** This version has no sign-off step on the web, so "
+        "nothing here is signed or final.")
 
-    st.markdown("#### The sample company")
-    st.write(
-        "Everything here runs on Valencia Operations, a synthetic company "
-        "invented for the demo. Its five data files describe a full history of "
-        "monthly actuals through mid-2026 and the drivers behind them, and the "
-        "tool forecasts the second half of the year on top of that history. "
-        "Because the company and its numbers are entirely fictional, nothing "
-        "you do on this site touches real or personal information.")
-
-    DATA_DIR = ROOT / "data"
-    expected = [
-        "actuals_ytd.csv", "driver_table.csv", "operational_actuals.csv",
-        "headcount_schedule.csv", "customer_targets.csv",
-    ]
-    present = [f for f in expected if (DATA_DIR / f).exists()]
-    if len(present) == len(expected):
-        st.success(
-            f"Sample dataset loaded, {len(present)} of {len(expected)} files "
-            "present. All figures on this site are illustrative.")
-    else:
-        missing = [f for f in expected if f not in present]
-        st.warning(
-            "The sample data is incomplete. Missing: " + ", ".join(missing) +
-            ". The tool pages need these files in the project's data folder.")
+    st.markdown("#### Pages")
+    st.page_link(HOW_MODEL_PAGE, label="How the model works: each line's driver, "
+                 "seasonal revenue and the lines you cannot change")
+    st.page_link(FORECAST_PAGE, label="Forecast: a worked example, and a forecast "
+                 "you re-run with your own drivers")
+    st.page_link(OWN_DATA_PAGE, label="Your own data: the five CSV files and how "
+                 "to run the project locally")
+    st.page_link(HOW_BUILT_PAGE, label="How it's built: the governance, the "
+                 "pipeline, the tests and the audit trail")
 
     with st.expander("Using your own API key"):
         st.write(
@@ -108,21 +90,25 @@ def _home_page():
             "site. On the web the data stays sample-only; to work on your own "
             "numbers, run the project locally from GitHub.")
 
-    st.markdown("#### Where to start")
-    st.write(
-        "If you want the reasoning first, read How the model works next; it "
-        "explains what each driver is and how the forecast is built. If you "
-        "would rather try it, open Forecast from the sidebar. The tool shows a "
-        "worked example without a key, or you can paste your own Anthropic key "
-        "to run a live analysis with AI commentary.")
-
     st.divider()
-    st.caption("Sample data only. All figures are illustrative.")
+    st.caption("Sample data only: Valencia Operations is a fictional company. "
+               "All figures are illustrative.")
+
+    DATA_DIR = ROOT / "data"
+    expected = [
+        "actuals_ytd.csv", "driver_table.csv", "operational_actuals.csv",
+        "headcount_schedule.csv", "customer_targets.csv",
+    ]
+    missing = [f for f in expected if not (DATA_DIR / f).exists()]
+    if missing:
+        st.warning(
+            "The sample data is incomplete. Missing: " + ", ".join(missing) +
+            ". The tool pages need these files in the project's data folder.")
 
 
 st.set_page_config(
     page_title="Driver-Based Rolling Forecast",
-    page_icon="•",
+    page_icon=":material/trending_up:",
     layout="centered",
     initial_sidebar_state="auto",
 )
@@ -132,20 +118,22 @@ PAGES_DIR = Path(__file__).resolve().parent / "pages"
 client = render_key_gate()
 st.session_state["live_client"] = client
 
+# Titles only: each page's address comes from its file name, which stays
+HOW_MODEL_PAGE = st.Page(str(PAGES_DIR / "how_the_model_works.py"),
+                         title="How the model works", icon=":material/menu_book:")
 FORECAST_PAGE = st.Page(str(PAGES_DIR / "forecast.py"),
                         title="Forecast", icon=":material/trending_up:")
-# Set by the Home button so the Forecast page opens on its example tab
-OPEN_EXAMPLE_TAB = "forecast_open_example"
+OWN_DATA_PAGE = st.Page(str(PAGES_DIR / "your_own_data.py"),
+                        title="Your own data", icon=":material/upload_file:")
+HOW_BUILT_PAGE = st.Page(str(PAGES_DIR / "how_its_built.py"),
+                         title="How it's built", icon=":material/build:")
 
 pg = st.navigation([
     st.Page(_home_page, title="Home", icon=":material/home:"),
-    st.Page(str(PAGES_DIR / "how_the_model_works.py"),
-            title="How the Model Works", icon=":material/menu_book:"),
+    HOW_MODEL_PAGE,
     FORECAST_PAGE,
-    st.Page(str(PAGES_DIR / "your_own_data.py"),
-            title="Your Own Data", icon=":material/upload_file:"),
-    st.Page(str(PAGES_DIR / "how_its_built.py"),
-            title="How It's Built", icon=":material/build:"),
+    OWN_DATA_PAGE,
+    HOW_BUILT_PAGE,
 ])
 
 pg.run()

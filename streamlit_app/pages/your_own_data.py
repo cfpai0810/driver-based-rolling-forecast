@@ -14,21 +14,22 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from streamlit_app.lib.theme import inject_css
+from streamlit_app.lib.theme import inject_css, header_html
 
 st.markdown(inject_css(), unsafe_allow_html=True)
 
 md_path = ROOT / "docs" / "bring_your_own_data.md"
 body = md_path.read_text(encoding="utf-8")
 
+# The document's own title becomes the banner's line under the page name
 lines = body.split("\n")
 if lines and lines[0].startswith("# "):
-    title = lines[0][2:].strip()
+    subtitle = lines[0][2:].strip()
     body = "\n".join(lines[1:])
 else:
-    title = "Your own data"
+    subtitle = "Running the rolling forecast on your own data"
 
-st.markdown("### {}".format(title))
+st.markdown(header_html("Your own data", subtitle), unsafe_allow_html=True)
 
 sections = body.split("\n## ")
 for i, section in enumerate(sections):

@@ -140,7 +140,8 @@ pip install -r requirements.txt
 streamlit run streamlit_app/Home.py
 ```
 
-Paste your key into the sidebar, then open Forecast and click Write commentary.
+Paste your key into the sidebar, then open Forecast, choose Run it yourself and
+click Write commentary.
 
 ## Adjusting drivers in the web app
 

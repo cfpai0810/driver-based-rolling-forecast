@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from streamlit_app.lib.theme import inject_css
+from streamlit_app.lib.theme import inject_css, header_html
 from streamlit_app.lib.driver_menu import (
     LINE_DEFAULTS, ALLOWED_METHODS, METHOD_LABEL, METHOD_VALUE_SHAPE,
 )
@@ -411,7 +411,11 @@ def _collect_state():
 # ---------------------------------------------------------------------------
 
 st.markdown(inject_css(), unsafe_allow_html=True)
-st.markdown("### Forecast")
+st.markdown(header_html(
+    "Forecast",
+    "The six-month forecast, from the driver behind each line to the model's "
+    "commentary on it."),
+    unsafe_allow_html=True)
 st.caption(
     "Base forecast for Valencia Operations. Adjust the driver assumptions "
     "below and click Re-forecast to see your scenario."
@@ -658,11 +662,8 @@ if _stored_fp is not None and _stored_fp != _fp:
 _live_client = st.session_state.get("live_client")
 _has_commentary = "_commentary_text" in st.session_state
 
-# Home's "See the worked example" button opens this page on the example tab.
-_open_example = st.session_state.pop("forecast_open_example", False)
-_tab_run, _tab_ex = st.tabs(
-    ["Run it yourself", "View a worked example"],
-    default="View a worked example" if _open_example else None)
+# The worked example is the first tab, open on arrival, as on Project 6
+_tab_ex, _tab_run = st.tabs(["View a worked example", "Run it yourself"])
 
 with _tab_run:
     if _has_commentary:

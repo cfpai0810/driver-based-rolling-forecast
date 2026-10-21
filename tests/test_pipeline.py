@@ -1526,7 +1526,8 @@ def _tab_containers(node):
 
 
 class TestStep3WorkedExampleTab:
-    """UX2: Home's button lands on the example tab; the sidebar link does not."""
+    """UX2: Home's button and the sidebar link both land on the example tab,
+    which is the first tab since Step 5a (V5)."""
 
     def test_ux2_button_opens_the_example_tab(self):
         at = _app("Home.py")
@@ -1535,11 +1536,11 @@ class TestStep3WorkedExampleTab:
         at.button[0].click().run()
         assert not at.exception
         assert [t.label for t in at.tabs] == [
-            "Run it yourself", "View a worked example"]
+            "View a worked example", "Run it yourself"]
         tab_sets = _tab_containers(at.main)
         assert len(tab_sets) == 1
-        assert tab_sets[0].proto.tab_container.default_tab_index == 1
-        # the flag is one-off: the page took it
+        assert tab_sets[0].proto.tab_container.default_tab_index == 0
+        # no flag: the button only switches page
         assert "forecast_open_example" not in at.session_state
         assert "Saved example (base forecast, default drivers)." in [
             c.value for c in at.caption]
@@ -1551,6 +1552,7 @@ class TestStep3WorkedExampleTab:
         tab_sets = _tab_containers(at.main)
         assert len(tab_sets) == 1
         assert tab_sets[0].proto.tab_container.default_tab_index == 0
+        assert at.tabs[0].label == "View a worked example"
 
 
 # =====================================================================
@@ -1710,3 +1712,173 @@ class TestDependencies:
         text = (Path(__file__).resolve().parent.parent / "requirements.txt").read_text(
             encoding="utf-8-sig")
         assert "certifi==2026.10.19" in text.split()
+
+
+# =====================================================================
+# Step 5a: the series look, after Project 6 (V1 to V5)
+# =====================================================================
+
+# Every page, as Home.py's navigation lists it: (page file, banner title)
+_PAGES = [
+    ("Home.py", "Driver-Based Rolling Forecast"),
+    ("pages/how_the_model_works.py", "How the model works"),
+    ("pages/forecast.py", "Forecast"),
+    ("pages/your_own_data.py", "Your own data"),
+    ("pages/how_its_built.py", "How it's built"),
+]
+
+
+def _banners(at):
+    """The (title, line) of every page banner on an AppTest page."""
+    import html
+    import re
+    found = []
+    for m in at.main.markdown:
+        for title, line in re.findall(
+                r'<div class="sc-header"><h1>(.*?)</h1><p>(.*?)</p></div>', m.value):
+            found.append((html.unescape(title), html.unescape(line)))
+    return found
+
+
+def _calls(source, name):
+    """Every call to st.<name>(...) in an app source file, as AST nodes."""
+    import ast
+    tree = ast.parse((APP_DIR / source).read_text(encoding="utf-8"))
+    return [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+            and getattr(n.func, "attr", "") == name]
+
+
+class TestStep5aLook:
+    """V1 theme, V2 banners and chips, V3 Home, V4 names and addresses,
+    V5 the example tab first and the page icon."""
+
+    def test_v1_primary_colour_is_the_navy(self):
+        import tomllib
+        from streamlit_app.lib.theme import DARK_BLUE
+        root = Path(__file__).resolve().parent.parent
+        config = tomllib.loads(
+            (root / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
+        assert config["theme"]["primaryColor"] == DARK_BLUE == "#1A3A5C"
+        assert config["client"]["toolbarMode"] == "minimal"
+
+    def test_v2_every_page_has_a_banner(self):
+        for page, title in _PAGES:
+            at = _app(page)
+            at.run()
+            assert not at.exception, page
+            banners = _banners(at)
+            assert len(banners) == 1, page
+            assert banners[0][0] == title, page
+            assert banners[0][1].strip(), page
+            # the banner is the page heading: no second title line under it
+            assert not [m.value for m in at.main.markdown
+                        if m.value.startswith("#") and m.value.splitlines()[0]
+                        .lstrip("#").strip().lower() == title.lower()], page
+
+    def test_v2_draft_and_final_chips(self):
+        from streamlit_app.lib.theme import (
+            DRAFT_CHIP, FINAL_CHIP, header_html, inject_css, status_chip_html,
+        )
+        assert status_chip_html("final") == '<span class="sc-status final">FINAL</span>'
+        assert status_chip_html("draft") == '<span class="sc-status draft">DRAFT</span>'
+        for other in ("FINAL", "signed", "", None):
+            assert status_chip_html(other) == '<span class="sc-status draft">DRAFT</span>'
+        assert (DRAFT_CHIP, FINAL_CHIP) == ("#B45F06", "#2E6B3F")
+        css = inject_css()
+        assert ".sc-status.draft { background: #B45F06; }" in css
+        assert ".sc-status.final { background: #2E6B3F; }" in css
+        assert "sc-badge" not in css
+        assert header_html("R&D <x>", "P&L") == (
+            '<div class="sc-header"><h1>R&amp;D &lt;x&gt;</h1><p>P&amp;L</p></div>')
+
+    def test_v3_home_blocks_and_page_links(self):
+        at = _app("Home.py")
+        at.run()
+        assert not at.exception
+        text = [m.value for m in at.main.markdown]
+        headings = [t for t in text if t.startswith("#### ")]
+        assert headings == ["#### What it does", "#### The governance promise",
+                            "#### Pages"]
+        promise = text[text.index("#### The governance promise") + 1]
+        for lead in ("**Python forecasts.**", "**A rule marks for review.**",
+                     "**The model narrates.**", "**A person reviews.**"):
+            assert lead in promise
+        assert promise.endswith("- **A person reviews.** This version has no sign-off "
+                                "step on the web, so nothing here is signed or final.")
+        # one link per page except Home, in the navigation order, "Title: what it is"
+        links = [e.proto for e in at.main.get("page_link")]
+        assert [link.page for link in links] == [
+            "how_the_model_works", "forecast", "your_own_data", "how_its_built"]
+        for link, (_, title) in zip(links, _PAGES[1:]):
+            assert link.label.startswith(title + ": ")
+            assert link.icon.startswith(":material/")
+        # on a phone the links wrap rather than clip (Project 6's rule)
+        from streamlit_app.lib.theme import inject_css
+        assert ('[data-testid="stPageLink-NavLink"], [data-testid="stPageLink-NavLink"] * {\n'
+                '        white-space: normal !important; height: auto !important;\n'
+                '      }') in inject_css()
+        # the key explainer stays, closed, with its cost figures
+        explainers = [e for e in at.main.expander if e.label == "Using your own API key"]
+        assert len(explainers) == 1 and explainers[0].proto.expanded is False
+        inside = " ".join(m.value for m in explainers[0].markdown)
+        assert "about 1.4 US cents" in inside
+        assert "1,742 input and 612 output tokens" in inside
+        # one closing caption, no success box, no warning with the data present
+        assert at.main.caption[-1].value == (
+            "Sample data only: Valencia Operations is a fictional company. "
+            "All figures are illustrative.")
+        assert not at.success and not at.warning
+        for gone in ("#### What this does", "#### The sample company",
+                     "#### Where to start"):
+            assert gone not in text
+
+    def test_v4_titles_are_sentence_case_and_urls_unchanged(self):
+        import streamlit as st
+        # Every page's address as main served it at 656b86e, before Step 5a.
+        # Home is the first page, so it is served at the root.
+        urls_before = ["_home_page", "how_the_model_works", "forecast",
+                       "your_own_data", "how_its_built"]
+        seen = []
+        real = st.navigation
+
+        def keep(pages, **kwargs):
+            seen.extend((page.url_path, page.title) for page in pages)
+            return real(pages, **kwargs)
+
+        with patch.object(st, "navigation", new=keep):
+            at = _app("Home.py")
+            at.run()
+        assert not at.exception
+        assert [url for url, _ in seen] == urls_before
+        assert [title for _, title in seen] == [
+            "Home", "How the model works", "Forecast", "Your own data",
+            "How it's built"]
+
+    def test_v5_example_tab_first_and_no_open_example_flag(self):
+        at = _app("pages/forecast.py")
+        at.run()
+        assert not at.exception
+        assert [t.label for t in at.tabs] == ["View a worked example",
+                                              "Run it yourself"]
+        tab_sets = _tab_containers(at.main)
+        assert len(tab_sets) == 1
+        assert tab_sets[0].proto.tab_container.default_tab_index == 0
+        for source in APP_DIR.rglob("*.py"):
+            assert "_open_example" not in source.read_text(encoding="utf-8"), source
+        tabs = _calls("pages/forecast.py", "tabs")
+        assert len(tabs) == 1
+        assert "default" not in [k.arg for k in tabs[0].keywords]
+
+    def test_v5_page_icon_is_the_tool_page_icon(self):
+        import ast
+        config = _calls("Home.py", "set_page_config")
+        assert len(config) == 1
+        page_icon = next(ast.literal_eval(k.value) for k in config[0].keywords
+                         if k.arg == "page_icon")
+        tool_icons = []
+        for call in _calls("Home.py", "Page"):
+            kwargs = {k.arg: k.value for k in call.keywords}
+            if "title" in kwargs and ast.literal_eval(kwargs["title"]) == "Forecast":
+                tool_icons.append(ast.literal_eval(kwargs["icon"]))
+        assert tool_icons == [":material/trending_up:"]
+        assert page_icon == tool_icons[0]

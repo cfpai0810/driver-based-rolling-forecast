@@ -21,10 +21,11 @@ automatically from last year's actuals and spreads an annual growth target
 across the forecast months. This is the kind of work an analyst would
 otherwise do by hand in a spreadsheet.
 
-The web app has two tabs. "Run it yourself" lets you adjust individual
-drivers and request a live AI commentary with your own Anthropic API key.
-"View a worked example" shows a pre-computed forecast without a key so
-the full output is visible immediately.
+The Forecast page has two tabs. "View a worked example", open on arrival,
+shows the base forecast with the commentary saved from a real run, so the
+full output is visible without a key. "Run it yourself" lets you adjust
+individual drivers and request a live AI commentary with your own
+Anthropic API key.
 
 **Outputs:** a text commentary, a chart-led A4 PDF report with quarterly
 and monthly P&L tables, and a detailed P&L CSV export.
@@ -227,7 +228,7 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               135 tests
+  test_pipeline.py               137 tests
 ```
 
 ---
@@ -272,7 +273,7 @@ so any run is fully reproducible.
 
 ## Test suite
 
-135 tests, no real API calls:
+137 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt
@@ -288,8 +289,8 @@ for failed model calls, and the Home and Forecast pages (the worked example
 button, the KPI tiles, the driver notes after an override, and the
 tabular-figures rule in the theme), and the series look: the theme colour,
 a banner on every page, the status chips, the Home blocks and page links,
-the page titles and addresses, the tab order and the browser tab icon. No
-test checks the charts.
+the page titles and addresses, the tab order, the live run inside its own
+tab and the browser tab icon. No test checks the charts.
 
 ---
 

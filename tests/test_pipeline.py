@@ -1421,11 +1421,13 @@ class TestStep2ForecastAndOutputs:
     def test_item30_kpi_tiles_wrap_at_phone_width(self):
         at = _app("pages/forecast.py")
         at.run()
-        rows = [m.value for m in at.markdown if "display:flex" in m.value]
-        assert len(rows) == 2
-        for html in rows:
-            assert "display:flex;flex-wrap:wrap" in html
-            assert html.count("flex:1 1 180px;min-width:0") == 3
+        # the worked example and the live run each draw two rows of tiles
+        for tab in at.tabs:
+            rows = [m.value for m in tab.markdown if "display:flex" in m.value]
+            assert len(rows) == 2
+            for html in rows:
+                assert "display:flex;flex-wrap:wrap" in html
+                assert html.count("flex:1 1 180px;min-width:0") == 3
 
     def test_item53_sidebar_state_is_auto(self):
         import ast
@@ -1505,10 +1507,11 @@ class TestStep2HomeAndTheme:
     def test_ux4_kpi_figures_carry_the_numeric_class(self):
         at = _app("pages/forecast.py")
         at.run()
-        rows = [m.value for m in at.markdown if "display:flex" in m.value]
-        assert len(rows) == 2
-        for html in rows:
-            assert html.count('class="sc-kpi-figure"') >= 3
+        for tab in at.tabs:
+            rows = [m.value for m in tab.markdown if "display:flex" in m.value]
+            assert len(rows) == 2
+            for html in rows:
+                assert html.count('class="sc-kpi-figure"') >= 3
 
 
 # =====================================================================
@@ -1882,3 +1885,54 @@ class TestStep5aLook:
                 tool_icons.append(ast.literal_eval(kwargs["icon"]))
         assert tool_icons == [":material/trending_up:"]
         assert page_icon == tool_icons[0]
+
+    def test_v5_tab_bar_under_the_banner_and_the_live_run_inside(self):
+        at = _app("pages/forecast.py")
+        at.run()
+        assert not at.exception
+        # the theme's CSS, the banner, then the tab bar: nothing above the tabs
+        top = list(at.main.children.values())
+        assert len(top) == 3
+        assert 'class="sc-header"' in top[1].value
+        assert top[2].type == "tab_container"
+        example, run = at.tabs
+        assert (example.label, run.label) == ("View a worked example",
+                                              "Run it yourself")
+        # everything a live run needs is inside Run it yourself
+        assert [b.label for b in run.button] == ["Re-forecast", "Reset defaults"]
+        assert len(run.selectbox) == 6 and len(run.number_input) == 4
+        assert [e.label for e in run.expander] == ["Driver assumptions",
+                                                   "Session audit (0 runs)"]
+        assert [d.proto.label for d in run.get("download_button")] == [
+            "Download PDF", "Download CSV"]
+        run_text = [m.value for m in run.markdown]
+        for heading in ("#### Operational Inputs", "#### AI Commentary",
+                        "#### Data Flags", "#### Downloads"):
+            assert heading in run_text
+        # the example keeps its own content and has no live controls
+        assert not example.button and not example.selectbox
+        assert not example.number_input and not example.expander
+        assert not example.get("download_button")
+        example_text = [m.value for m in example.markdown]
+        for heading in ("#### Revenue and EBIT Timeline", "#### P&L Summary",
+                        "#### AI Commentary"):
+            assert heading in example_text
+        assert any("FORECAST OVERVIEW" in m for m in example_text)
+        assert example.caption[0].value == (
+            "Saved example (base forecast, default drivers).")
+
+    def test_v5_example_tab_keeps_the_base_forecast_after_a_reforecast(self):
+        at = _app("pages/forecast.py")
+        at.run()
+        base_h2 = "€8,490,872"
+        assert any(base_h2 in m.value for m in at.tabs[0].markdown)
+        at.number_input(key="value_revenue").set_value(15.0)
+        next(b for b in at.button if b.label == "Re-forecast").click().run()
+        assert not at.exception
+        example, run = at.tabs
+        assert [s.value for s in run.success][0] == "Showing adjusted forecast."
+        assert not any(base_h2 in m.value for m in run.markdown)
+        assert any(base_h2 in m.value for m in example.markdown)
+        assert example.caption[0].value == (
+            "Saved example (base forecast, default drivers).")
+        assert any("FORECAST OVERVIEW" in m.value for m in example.markdown)

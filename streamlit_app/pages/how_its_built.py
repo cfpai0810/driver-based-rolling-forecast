@@ -67,7 +67,7 @@ st.write(
 
 st.info(
     "In one line: you set the drivers, Python calculates every figure, the "
-    "model writes the commentary, and you approve the result. The intelligence "
+    "model writes the commentary, and you review the result. The intelligence "
     "is at the edges, and the numbers in the middle are deterministic and "
     "checkable.")
 

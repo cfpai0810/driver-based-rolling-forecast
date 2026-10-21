@@ -1075,7 +1075,8 @@ class TestKeylessExampleAndDiagrams:
         assert "<svg" in svg
         assert "viewBox" in svg
         assert "YOU SET DRIVERS" in svg
-        assert "YOU APPROVE" in svg
+        assert "YOU REVIEW" in svg
+        assert "APPROVE" not in svg   # no approval step on the web
 
     def test_pipeline_flow_svg_valid(self):
         """pipeline_flow_svg returns a non-empty SVG string."""
@@ -1702,3 +1703,10 @@ class TestDependencies:
         pins = self._pins("requirements.txt")[1]
         assert self._version(pins["anyio"]) >= (4, 14, 2)
         assert self._version(pins["pillow"]) >= (12, 3, 0)
+
+    def test_item22_certifi_has_the_fixed_root_bundle(self):
+        # certifi before 2026.10.18 trusts emSign ECC Root CA G3, whose
+        # intermediates had compromised keys (GHSA-6q48-6c7w-9gw2).
+        text = (Path(__file__).resolve().parent.parent / "requirements.txt").read_text(
+            encoding="utf-8-sig")
+        assert "certifi==2026.10.19" in text.split()

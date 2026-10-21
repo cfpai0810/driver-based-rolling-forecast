@@ -57,7 +57,7 @@ def governance_flow_svg():
         _box(584, 170, ENGINE, ENGINE_BG, "MARKED FOR REVIEW",
              "Rules flag when the", "output needs scrutiny", "deterministic", ENGINE) +
         _arrow(754) +
-        _box(782, 124, PERSON, PERSON_BG, "YOU APPROVE",
+        _box(782, 124, PERSON, PERSON_BG, "YOU REVIEW",
              "You review and", "sign off the result", "the person", PERSON)
     )
 
@@ -67,7 +67,7 @@ def governance_flow_svg():
      aria-label="How a forecast run is governed: you set each driver's method
      and value, deterministic code computes every P and L line with the model
      absent from the numbers, the model narrates the calculated figures, rules
-     flag anything that needs scrutiny, and you review and approve the result.">
+     flag anything that needs scrutiny, and you review the result.">
   <defs>
     <marker id="gv-arrow" viewBox="0 0 10 10" refX="8" refY="5"
             markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -78,7 +78,7 @@ def governance_flow_svg():
 
   <text x="460" y="28" text-anchor="middle" font-family="'Inter', sans-serif"
         font-size="13.5" font-weight="600" fill="{PERSON}">
-    You set the drivers and approve the output. The model works only in between.
+    You set the drivers and review the output. The model works only in between.
   </text>
 
   {boxes}

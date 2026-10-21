@@ -54,7 +54,7 @@ def _home_page():
     st.write(
         "One principle holds the whole thing together: the language model reads "
         "the computed forecast and writes the commentary, a deterministic "
-        "engine performs every calculation, and a person approves the output. "
+        "engine performs every calculation, and a person reviews the output. "
         "The intelligence sits at the edges; the numbers in the middle are "
         "computed the way a spreadsheet would compute them, and never by the "
         "model.")

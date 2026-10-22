@@ -1499,6 +1499,10 @@ class TestStep2HomeAndTheme:
         global_rule = next(body for sel, body in rules if "html, body" in sel)
         assert "font-family" in global_rule
         assert "tnum" not in global_rule and '"cv05" 1' in global_rule
+        # Lists, bold, italics and captions in Inter too, as Project 6's
+        # theme sets them (5b fix round)
+        global_sel = next(sel for sel, body in rules if "html, body" in sel)
+        assert global_sel.rstrip().endswith("th, ul, ol, li, strong, em, caption")
         numeric = [sel for sel, body in rules if "tnum" in body]
         assert len(numeric) == 1
         selectors = [s.strip() for s in numeric[0].split("*/")[-1].split(",")]

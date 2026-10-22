@@ -806,11 +806,10 @@ with _tab_run:
         reforecast = st.button("Re-forecast", type="primary",
                                use_container_width=True)
     with btn_r:
-        reset = st.button("Reset defaults", use_container_width=True)
-
-    if reset:
-        _reset_to_defaults()
-        st.rerun()
+        # on_click, so the reset runs before the driver boxes are drawn:
+        # Streamlit refuses to change a box that is already on screen
+        st.button("Reset defaults", on_click=_reset_to_defaults,
+                  use_container_width=True)
 
     if reforecast:
         overrides = build_overrides(_collect_state())

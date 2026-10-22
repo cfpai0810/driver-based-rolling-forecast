@@ -2401,3 +2401,27 @@ class TestStep5bSignOff:
         # The lifecycle diagram is the production design: it still approves and locks
         lifecycle = governance_lifecycle_svg()
         assert "YOU APPROVE" in lifecycle and "LOCKED" in lifecycle
+
+
+# =============================================================================
+# Reset defaults puts the drivers back without an error (5b fix round)
+# =============================================================================
+
+class TestResetDefaults:
+
+    def test_5b_reset_defaults_puts_every_driver_back(self):
+        # The reset used to run after the driver boxes were drawn, and
+        # Streamlit refuses to change a drawn widget's value. As the button's
+        # on_click it runs before they are drawn.
+        at = _app("pages/forecast.py")
+        at.run()
+        assert not at.exception
+        defaults = ({w.key: w.value for w in at.selectbox},
+                    {w.key: w.value for w in at.number_input})
+        at.number_input(key="value_revenue").set_value(15.0).run()
+        assert at.number_input(key="value_revenue").value == 15.0
+        next(b for b in at.button if b.label == "Reset defaults").click().run()
+        assert not at.exception
+        assert ({w.key: w.value for w in at.selectbox},
+                {w.key: w.value for w in at.number_input}) == defaults
+        assert at.number_input(key="value_revenue").value != 15.0

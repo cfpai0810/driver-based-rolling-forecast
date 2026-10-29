@@ -114,19 +114,29 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
-PAGES_DIR = Path(__file__).resolve().parent / "pages"
+# The view files live in a folder NOT named "pages", so Streamlit's automatic
+# pages/ navigation never triggers and st.navigation() below is the sole nav
+# (with these explicit titles and this order, not filename-derived alphabetical).
+# A folder named pages/ here would let Streamlit run a page without this
+# script when that page is the first request after a start, with file names
+# in the sidebar and no key gate.
+VIEWS_DIR = Path(__file__).resolve().parent / "views"
 
 client = render_key_gate()
 st.session_state["live_client"] = client
 
-# Titles only: each page's address comes from its file name, which stays
-HOW_MODEL_PAGE = st.Page(str(PAGES_DIR / "how_the_model_works.py"),
+# Each page's address is pinned with url_path: the addresses are published
+# (the README, posts), so a renamed or moved file must not change them.
+HOW_MODEL_PAGE = st.Page(str(VIEWS_DIR / "how_the_model_works.py"),
+                         url_path="how_the_model_works",
                          title="How the model works", icon=":material/menu_book:")
-FORECAST_PAGE = st.Page(str(PAGES_DIR / "forecast.py"),
+FORECAST_PAGE = st.Page(str(VIEWS_DIR / "forecast.py"), url_path="forecast",
                         title="Forecast", icon=":material/trending_up:")
-OWN_DATA_PAGE = st.Page(str(PAGES_DIR / "your_own_data.py"),
+OWN_DATA_PAGE = st.Page(str(VIEWS_DIR / "your_own_data.py"),
+                        url_path="your_own_data",
                         title="Your own data", icon=":material/upload_file:")
-HOW_BUILT_PAGE = st.Page(str(PAGES_DIR / "how_its_built.py"),
+HOW_BUILT_PAGE = st.Page(str(VIEWS_DIR / "how_its_built.py"),
+                         url_path="how_its_built",
                          title="How it's built", icon=":material/build:")
 
 pg = st.navigation([

@@ -220,7 +220,7 @@ src/
 streamlit_app/
   Home.py                        App shell and landing page
   lib/                           Theme, key gate, charts, cost, audit, errors
-  pages/
+  views/
     how_the_model_works.py       Driver methods and seasonality explained
     forecast.py                  Live forecast with driver controls and sign-off
     your_own_data.py             Guide for running on your own numbers
@@ -241,7 +241,7 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               150 tests
+  test_pipeline.py               152 tests
   test_signoff.py                9 tests: the sign-off rule
 ```
 
@@ -287,7 +287,7 @@ so any run is fully reproducible.
 
 ## Test suite
 
-159 tests, no real API calls:
+161 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt

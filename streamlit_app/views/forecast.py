@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/forecast.py -- base and adjusted forecast display (Phases 3+4+5+6)
+# views/forecast.py: base and adjusted forecast display (Phases 3+4+5+6)
 # =============================================================================
 # Two tabs under the banner, as on Project 6. "View a worked example", open
 # on arrival, shows the base forecast with the commentary saved from a real

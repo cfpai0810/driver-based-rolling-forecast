@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/your_own_data.py -- instructions for running on your own data
+# views/your_own_data.py: instructions for running on your own data
 # =============================================================================
 # Reads docs/bring_your_own_data.md at runtime and renders it. The markdown
 # file is the single source of truth; this page just displays it.

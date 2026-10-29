@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/how_its_built.py: trust story then technical depth
+# views/how_its_built.py: trust story then technical depth
 # =============================================================================
 # Two audiences on one page. Part 1 is for a finance leader: why a forecast
 # tool with AI commentary can be trusted (the governance model, the

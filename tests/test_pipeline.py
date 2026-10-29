@@ -1215,7 +1215,7 @@ class TestStep2KeyGateAndErrors:
     def test_item55_forecast_page_shows_one_plain_message(self):
         import anthropic
         from streamlit_app.lib.errors import model_failure_message
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.session_state["live_client"] = _StandInClient(
             exc=_sdk_error(anthropic.AuthenticationError, 401))
         at.run()
@@ -1232,7 +1232,7 @@ class TestStep2KeyGateAndErrors:
         empty = SimpleNamespace(
             content=[], stop_reason="end_turn",
             usage=SimpleNamespace(input_tokens=10, output_tokens=0))
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.session_state["live_client"] = _StandInClient(reply=empty)
         at.run()
         next(b for b in at.button if b.label == "Write commentary").click().run()
@@ -1259,7 +1259,7 @@ class TestStep2KeyGateAndErrors:
         assert "browser" not in header.lower()
 
     def test_item3_audit_caption_says_where_the_trail_is_held(self):
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.run()
         captions = " ".join(c.value for c in at.caption)
         assert ("This audit trail is held in the server's session state and "
@@ -1393,7 +1393,7 @@ class TestStep2ForecastAndOutputs:
         assert cells["R&amp;D Expense"] == "6.0%"
 
     def test_item35_web_pdf_failure_keeps_the_csv(self):
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         with patch("src.step4_output_writer.build_pdf_bytes",
                    side_effect=RuntimeError("stand-in failure")):
             at.run()
@@ -1421,7 +1421,7 @@ class TestStep2ForecastAndOutputs:
         assert line.split(":", 1)[1].split() == ["USD", "3.0000"]
 
     def test_item30_kpi_tiles_wrap_at_phone_width(self):
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.run()
         # the worked example and the live run each draw two rows of tiles
         for tab in at.tabs:
@@ -1511,7 +1511,7 @@ class TestStep2HomeAndTheme:
             assert wanted in selectors
 
     def test_ux4_kpi_figures_carry_the_numeric_class(self):
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.run()
         for tab in at.tabs:
             rows = [m.value for m in tab.markdown if "display:flex" in m.value]
@@ -1555,7 +1555,7 @@ class TestStep3WorkedExampleTab:
             c.value for c in at.caption]
 
     def test_ux2_sidebar_link_still_opens_the_first_tab(self):
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.run()
         assert not at.exception
         tab_sets = _tab_containers(at.main)
@@ -1630,7 +1630,7 @@ class TestStep3Fixes:
             return built["pdf"]
 
         client = _PromptKeeper()
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         with patch("src.step4_output_writer.build_pdf_bytes", side_effect=keep_pdf):
             at.run()
             at.number_input(key="value_r&d_expense").set_value(10.0)
@@ -1730,10 +1730,10 @@ class TestDependencies:
 # Every page, as Home.py's navigation lists it: (page file, banner title)
 _PAGES = [
     ("Home.py", "Driver-Based Rolling Forecast"),
-    ("pages/how_the_model_works.py", "How the model works"),
-    ("pages/forecast.py", "Forecast"),
-    ("pages/your_own_data.py", "Your own data"),
-    ("pages/how_its_built.py", "How it's built"),
+    ("views/how_the_model_works.py", "How the model works"),
+    ("views/forecast.py", "Forecast"),
+    ("views/your_own_data.py", "Your own data"),
+    ("views/how_its_built.py", "How it's built"),
 ]
 
 
@@ -1865,7 +1865,7 @@ class TestStep5aLook:
             "How it's built"]
 
     def test_v5_example_tab_first_and_no_open_example_flag(self):
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.run()
         assert not at.exception
         assert [t.label for t in at.tabs] == ["View a worked example",
@@ -1875,7 +1875,7 @@ class TestStep5aLook:
         assert tab_sets[0].proto.tab_container.default_tab_index == 0
         for source in APP_DIR.rglob("*.py"):
             assert "_open_example" not in source.read_text(encoding="utf-8"), source
-        tabs = _calls("pages/forecast.py", "tabs")
+        tabs = _calls("views/forecast.py", "tabs")
         assert len(tabs) == 1
         assert "default" not in [k.arg for k in tabs[0].keywords]
 
@@ -1894,7 +1894,7 @@ class TestStep5aLook:
         assert page_icon == tool_icons[0]
 
     def test_v5_tab_bar_under_the_banner_and_the_live_run_inside(self):
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.run()
         assert not at.exception
         # the theme's CSS, the banner, then the tab bar: nothing above the tabs
@@ -1929,7 +1929,7 @@ class TestStep5aLook:
             "Saved example (base forecast, default drivers).")
 
     def test_v5_example_tab_keeps_the_base_forecast_after_a_reforecast(self):
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.run()
         base_h2 = "€8,490,872"
         assert any(base_h2 in m.value for m in at.tabs[0].markdown)
@@ -2033,7 +2033,7 @@ def downloads(monkeypatch):
 
 def _live(client=None):
     """The Forecast page with a stand-in client where the key gate puts one."""
-    at = _app("pages/forecast.py")
+    at = _app("views/forecast.py")
     at.session_state["live_client"] = client or _CommentaryClient()
     at.run()
     assert not at.exception
@@ -2099,7 +2099,7 @@ class TestStep5bSignOff:
 
     def test_5b_no_section_before_a_result(self, downloads):
         # No key, so no commentary: nothing to sign, and the PDF is a DRAFT
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.run()
         assert not at.exception
         assert _section(at) == [] and not _boxes(at) and not _sign_buttons(at)
@@ -2327,7 +2327,7 @@ class TestStep5bSignOff:
         with patch("streamlit_app.lib.key_gate.build_client",
                    side_effect=lambda key: _CommentaryClient()):
             at = AppTest.from_function(_gate_then_forecast, default_timeout=180)
-            at.session_state["forecast_page"] = str(APP_DIR / "pages" / "forecast.py")
+            at.session_state["forecast_page"] = str(APP_DIR / "views" / "forecast.py")
             at.run()
             at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
             _click(at, "Write commentary")
@@ -2392,7 +2392,7 @@ class TestStep5bSignOff:
         flow = governance_flow_svg()
         assert "YOU SIGN OFF" in flow
         assert "You set the drivers and sign off the output." in flow
-        built = (APP_DIR / "pages" / "how_its_built.py").read_text(encoding="utf-8")
+        built = (APP_DIR / "views" / "how_its_built.py").read_text(encoding="utf-8")
         assert ('"This live demo stops at a typed sign-off kept for the session; it still "\n'
                 '    "does not store or lock anything') in built
         stale = ["stops at flagging for review", "no sign-off step", "nobody approves",
@@ -2417,7 +2417,7 @@ class TestResetDefaults:
         # The reset used to run after the driver boxes were drawn, and
         # Streamlit refuses to change a drawn widget's value. As the button's
         # on_click it runs before they are drawn.
-        at = _app("pages/forecast.py")
+        at = _app("views/forecast.py")
         at.run()
         assert not at.exception
         defaults = ({w.key: w.value for w in at.selectbox},
@@ -2429,3 +2429,47 @@ class TestResetDefaults:
         assert ({w.key: w.value for w in at.selectbox},
                 {w.key: w.value for w in at.number_input}) == defaults
         assert at.number_input(key="value_revenue").value != 15.0
+
+
+# =============================================================================
+# Step 6a: the page files live in views/, and each page's address is pinned
+# =============================================================================
+
+# The sidebar address of every page after Home, as main serves it before
+# Step 6 and as the README and posts publish it
+_PINNED = ["how_the_model_works", "forecast", "your_own_data", "how_its_built"]
+
+
+class TestStep6aViews:
+
+    def test_6a_no_pages_folder_under_streamlit_app(self):
+        # A folder named pages/ beside Home.py lets Streamlit run a page
+        # without Home (its older multipage mode, when a page is the first
+        # request after a start): file names in the sidebar, no key gate
+        assert not [p for p in APP_DIR.rglob("pages") if p.is_dir()]
+        assert (APP_DIR / "views" / "forecast.py").is_file()
+
+    def test_6a_every_page_address_is_pinned(self):
+        import ast
+        import streamlit as st
+        # Written out in Home.py: url_path= on every page file, in this order
+        pinned = []
+        for call in _calls("Home.py", "Page"):
+            kwargs = {k.arg: k.value for k in call.keywords}
+            if isinstance(call.args[0], ast.Call):     # a file, not Home's function
+                assert "url_path" in kwargs, ast.unparse(call.args[0])
+                pinned.append(ast.literal_eval(kwargs["url_path"]))
+        assert pinned == _PINNED
+        # And served so: Home at the root, then the four pinned addresses
+        seen = []
+        real = st.navigation
+
+        def keep(pages, **kwargs):
+            seen.extend(page.url_path for page in pages)
+            return real(pages, **kwargs)
+
+        with patch.object(st, "navigation", new=keep):
+            at = _app("Home.py")
+            at.run()
+        assert not at.exception
+        assert seen == ["_home_page", *_PINNED]

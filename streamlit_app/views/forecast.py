@@ -21,7 +21,9 @@
 # only for the result it was made for: a Re-forecast that changes the
 # figures, or a new Write commentary, is a new DRAFT. While the drivers in
 # the panel differ from the forecast on screen, Sign off waits for a
-# Re-forecast.
+# Re-forecast. The PDF button sits inside the Sign-off section, in Project
+# 4's order; before there is commentary to sign there is no section, and the
+# DRAFT PDF sits in the downloads row beside the CSV.
 # =============================================================================
 
 import hashlib
@@ -653,9 +655,23 @@ def _sign_off(result, run, outstanding):
     add_signoff(run, signed.record(outstanding))
 
 
-def _render_signoff(result, signed, outstanding, stale):
-    """The Sign-off section: DRAFT with the boxes and the button, or FINAL
-    and read only."""
+def _pdf_button(pdf_bytes, signed, **layout):
+    """The report download, labelled by the sign-off that stands: the DRAFT
+    PDF, or the FINAL PDF once signed. Nothing when the PDF could not be
+    built: its plain message shows under Downloads instead."""
+    if pdf_bytes is None:
+        return
+    st.download_button(
+        "Download the FINAL PDF" if signed is not None
+        else "Download the DRAFT PDF", data=pdf_bytes,
+        file_name="forecast_report.pdf",
+        mime="application/pdf", **layout)
+
+
+def _render_signoff(result, signed, outstanding, stale, pdf_bytes):
+    """The Sign-off section, in Project 4's order: DRAFT with the boxes, the
+    button and then the DRAFT PDF, or FINAL and read only, with the FINAL
+    PDF before the scope note."""
     refusal = st.session_state.pop(_REFUSAL_KEY, None)
     st.markdown("#### Sign-off")
     st.markdown(_SIGNING_MEANS)
@@ -666,6 +682,7 @@ def _render_signoff(result, signed, outstanding, stale):
             unsafe_allow_html=True)
         if refusal:
             st.warning(refusal)
+        _pdf_button(pdf_bytes, signed)
         st.caption(SCOPE_NOTE)
         return
 
@@ -689,6 +706,31 @@ def _render_signoff(result, signed, outstanding, stale):
     st.caption(SCOPE_NOTE)
     if refusal:
         st.warning(refusal)
+    _pdf_button(pdf_bytes, None)
+
+
+# ---------------------------------------------------------------------------
+# Session audit
+# ---------------------------------------------------------------------------
+
+# A driver's value prints in its method's own shape (lib/driver_menu.py);
+# fixed_growth is the older name of growth_pct
+_AUDIT_SHAPE = dict(METHOD_VALUE_SHAPE,
+                    fixed_growth=METHOD_VALUE_SHAPE["growth_pct"])
+
+
+def _audit_driver_line(driver):
+    """One driver of a run in the session audit, as "line: method (value)":
+    a percentage as 120.0%, an amount as 45,000. A schedule-driven line has
+    no single value, so it prints none."""
+    shape = _AUDIT_SHAPE.get(driver["method"])
+    if shape == "pct":
+        value = " ({:.1%})".format(driver["value"])
+    elif shape == "currency":
+        value = " ({:,.0f})".format(driver["value"])
+    else:
+        value = ""
+    return "{}: {}{}".format(driver["line"], driver["method"], value)
 
 
 # ---------------------------------------------------------------------------
@@ -998,19 +1040,17 @@ with _tab_run:
         st.error("The PDF report could not be built. " + friendly_message(exc))
     _csv_bytes = build_csv_bytes(pnl_df)
 
-    # The PDF's column is wider than before, so "Download the DRAFT PDF" sits
-    # on one line; the CSV's column keeps its width
-    _dc1, _dc2, _ = st.columns([3, 2, 4])
-    with _dc1:
-        if _pdf_bytes is not None:
-            st.download_button(
-                "Download the FINAL PDF" if _signed is not None
-                else "Download the DRAFT PDF", data=_pdf_bytes,
-                file_name="forecast_report.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
-    with _dc2:
+    # With commentary to sign, the PDF button sits in the Sign-off section
+    # below. Before that there is no section, and the DRAFT PDF sits here: its
+    # column is wider, so "Download the DRAFT PDF" sits on one line. The
+    # CSV's column keeps its width.
+    if _result is None and _pdf_bytes is not None:
+        _dc_pdf, _dc_csv, _ = st.columns([3, 2, 4])
+        with _dc_pdf:
+            _pdf_button(_pdf_bytes, _signed, use_container_width=True)
+    else:
+        _dc_csv, _ = st.columns([2, 7])
+    with _dc_csv:
         st.download_button(
             "Download CSV", data=_csv_bytes,
             file_name="forecast_pnl.csv",
@@ -1031,7 +1071,7 @@ with _tab_run:
         _render_signoff(
             _result, _signed,
             ["{}{}.".format(r[0].upper(), r[1:]) for r in _reasons],
-            _inputs_changed())
+            _inputs_changed(), _pdf_bytes)
 
     # ---- Session audit ----------------------------------------------------
 
@@ -1047,14 +1087,8 @@ with _tab_run:
         for _run in _runs:
             st.markdown("---")
             st.markdown("**{}**".format(_run["timestamp"][:19].replace("T", " ")))
-            _drv_lines = []
-            for _d in _run["effective_drivers"]:
-                _drv_lines.append("{}: {} ({})".format(
-                    _d["line"], _d["method"],
-                    "{:.1%}".format(_d["value"]) if _d["value"] < 1
-                    else "{:,.0f}".format(_d["value"]),
-                ))
-            st.text("\n".join(_drv_lines))
+            st.text("\n".join(_audit_driver_line(_d)
+                              for _d in _run["effective_drivers"]))
             _audit_cols = st.columns(3)
             _audit_cols[0].metric("Fingerprint", _run["fingerprint"])
             if _run["has_commentary"] and _run["cost"]:

@@ -2057,7 +2057,8 @@ def _section(at):
             break
         if inside:
             found.append((node.type, node.label if node.type in (
-                "text_input", "button") else node.value))
+                "text_input", "button") else node.proto.label
+                if node.type == "download_button" else node.value))
     return found
 
 
@@ -2131,14 +2132,16 @@ class TestStep5bSignOff:
             ("markdown", "#### Sign-off"), ("markdown", _SIGNING_MEANS),
             ("markdown", _DRAFT_CHIP), ("markdown", "Nothing is outstanding."),
             ("text_input", "Reviewer name"), ("text_input", WORD_LABEL),
-            ("button", "Sign off"), ("caption", SCOPE_NOTE)]
+            ("button", "Sign off"), ("caption", SCOPE_NOTE),
+            ("download_button", "Download the DRAFT PDF")]
         nodes = list(run.children.values())
         assert nodes[-len(section) - 1].value == "#### Sign-off"
         assert nodes[-1].label == "Session audit (1 run)"
         assert [t.help for t in run.text_input if t.key == _SIGN_BOX] == [WORD_HELP]
         (button,) = _sign_buttons(at)
         assert button.proto.type == "primary" and not button.disabled
-        assert _labels(at) == ["Download the DRAFT PDF", "Download CSV"]
+        # Step 6b: the CSV in the downloads row, the PDF in the section
+        assert _labels(at) == ["Download CSV", "Download the DRAFT PDF"]
         draft = _pdf_lines(downloads(at, "Download the DRAFT PDF"))
         # Near the top: under the cover, before the first section
         assert "0 flag(s) DRAFT: not signed off FORECAST OVERVIEW" in draft
@@ -2152,7 +2155,7 @@ class TestStep5bSignOff:
             assert _section(at)[2] == ("markdown", _DRAFT_CHIP)
             assert "_signoff" not in at.session_state
             assert "status" not in at.session_state["forecast_audit"][0]
-            assert _labels(at)[0] == "Download the DRAFT PDF"
+            assert _labels(at) == ["Download CSV", "Download the DRAFT PDF"]
 
         # Signed: FINAL and the signed line, read only, the FINAL PDF
         _sign(at, "José Núñez", " SIGN ")
@@ -2162,9 +2165,9 @@ class TestStep5bSignOff:
         assert _section(at) == [
             ("markdown", "#### Sign-off"), ("markdown", _SIGNING_MEANS),
             ("markdown", "{}&nbsp; {}".format(_FINAL_CHIP, line)),
-            ("caption", SCOPE_NOTE)]
+            ("download_button", "Download the FINAL PDF"), ("caption", SCOPE_NOTE)]
         assert not at.tabs[1].warning and not _boxes(at) and not _sign_buttons(at)
-        assert _labels(at) == ["Download the FINAL PDF", "Download CSV"]
+        assert _labels(at) == ["Download CSV", "Download the FINAL PDF"]
         final = _pdf_lines(downloads(at, "Download the FINAL PDF"))
         assert ("0 flag(s) FINAL: signed off by José Núñez on {} FORECAST "
                 "OVERVIEW".format(when)) in final
@@ -2241,8 +2244,9 @@ class TestStep5bSignOff:
         at.number_input(key="value_r&d_expense").set_value(6.0).run()
         (button,) = _sign_buttons(at)
         assert button.disabled
-        assert _section(at)[-3:] == [("button", "Sign off"), ("caption", STALE_CAPTION),
-                                     ("caption", SCOPE_NOTE)]
+        assert _section(at)[-4:] == [("button", "Sign off"), ("caption", STALE_CAPTION),
+                                     ("caption", SCOPE_NOTE),
+                                     ("download_button", "Download the DRAFT PDF")]
         # Back to the drivers of the forecast on screen: Sign off is offered
         at.number_input(key="value_r&d_expense").set_value(10.0).run()
         assert not _sign_buttons(at)[0].disabled
@@ -2317,7 +2321,7 @@ class TestStep5bSignOff:
         # still the one signed
         at.number_input(key="value_revenue").set_value(15.0).run()
         assert _section(at)[2][1].startswith(_FINAL_CHIP)
-        assert _labels(at)[0] == "Download the FINAL PDF"
+        assert _labels(at) == ["Download CSV", "Download the FINAL PDF"]
 
     def test_5b_a_key_change_on_its_own_keeps_the_signoff(self):
         # The key is not an input of the result: it lets Write commentary
@@ -2336,7 +2340,7 @@ class TestStep5bSignOff:
                 at.sidebar.text_input(key="byo_api_key").input(key).run()
                 assert not at.exception
                 assert _section(at)[2][1].startswith(_FINAL_CHIP)
-                assert _labels(at)[0] == "Download the FINAL PDF"
+                assert _labels(at) == ["Download CSV", "Download the FINAL PDF"]
             assert at.session_state["live_client"] is None
 
     def test_5b_names_print_safely(self, downloads):
@@ -2473,3 +2477,50 @@ class TestStep6aViews:
             at.run()
         assert not at.exception
         assert seen == ["_home_page", *_PINNED]
+
+
+# =============================================================================
+# Step 6b: the PDF button inside the Sign-off section, and the session
+# audit's driver values in their method's own shape
+# =============================================================================
+
+class TestStep6b:
+
+    def test_6b1_the_pdf_button_sits_in_the_signoff_section(self, downloads):
+        from src.signoff import NAME_REFUSAL, SCOPE_NOTE
+        at = _live()
+        _click(at, "Write commentary")
+        # DRAFT, in Project 4's order: Sign off, the scope note, any refusal,
+        # then the DRAFT PDF, after the Sign-off heading
+        _sign(at, "   ")
+        assert _section(at)[-4:] == [
+            ("button", "Sign off"), ("caption", SCOPE_NOTE), ("warning", NAME_REFUSAL),
+            ("download_button", "Download the DRAFT PDF")]
+        # The downloads row above the heading keeps the CSV alone
+        assert _labels(at) == ["Download CSV", "Download the DRAFT PDF"]
+        assert "DRAFT: not signed off" in _pdf_lines(downloads(at, "Download the DRAFT PDF"))
+        # FINAL: the signed line, the FINAL PDF, then the scope note
+        _sign(at, "A. Reviewer")
+        section = _section(at)
+        assert section[2][1].startswith(_FINAL_CHIP)
+        assert section[3:] == [("download_button", "Download the FINAL PDF"),
+                               ("caption", SCOPE_NOTE)]
+        assert _labels(at) == ["Download CSV", "Download the FINAL PDF"]
+        assert "FINAL: signed off by A. Reviewer" in _pdf_lines(
+            downloads(at, "Download the FINAL PDF"))
+
+    def test_6b3_audit_prints_each_driver_value_in_its_own_shape(self):
+        at = _live()
+        # A margin of 120% (1.2) and a fixed amount of 0.5 a month
+        at.number_input(key="value_cogs").set_value(120.0).run()
+        at.number_input(key="value_it_infrastructure").set_value(0.5).run()
+        _click(at, "Re-forecast")
+        _click(at, "Write commentary")
+        (drivers,) = [t.value for t in _audit_expander(at).text]
+        assert drivers.splitlines() == [
+            "Revenue: seasonal_yoy (12.0%)",
+            "COGS: margin_pct (120.0%)",
+            "Personnel Cost: headcount_driven",
+            "Marketing Spend: cac_driven",
+            "IT Infrastructure: fixed (0)",
+            "R&D Expense: growth_pct (6.0%)"]

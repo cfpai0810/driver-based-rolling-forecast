@@ -3020,3 +3020,27 @@ class TestStep7aDriverPanel:
         assert not at.exception
         assert any("`fixed_growth` - the older name of `growth_pct`" in m.value
                    for m in at.markdown)
+
+
+# =============================================================================
+# Step 7b: width="stretch" in place of use_container_width
+# =============================================================================
+# Streamlit 1.60 warns that use_container_width will be removed; for
+# use_container_width=True it sets width="stretch", which the app now passes.
+
+class TestStep7b:
+
+    def test_step7b_no_use_container_width(self):
+        import ast
+        root = Path(__file__).resolve().parent.parent
+        files = sorted((root / "streamlit_app").rglob("*.py")) + sorted(
+            (root / "src").rglob("*.py"))
+        if (root / "main.py").is_file():
+            files.append(root / "main.py")
+        found = []
+        for path in files:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            found += ["{}:{}".format(path.relative_to(root).as_posix(), node.lineno)
+                      for node in ast.walk(tree) if isinstance(node, ast.Call)
+                      and any(k.arg == "use_container_width" for k in node.keywords)]
+        assert found == []

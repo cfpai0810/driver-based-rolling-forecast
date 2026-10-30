@@ -902,12 +902,12 @@ with _tab_run:
     btn_l, btn_r, _ = st.columns([2, 2, 5])
     with btn_l:
         reforecast = st.button("Re-forecast", type="primary",
-                               use_container_width=True)
+                               width="stretch")
     with btn_r:
         # on_click, so the reset runs before the driver boxes are drawn:
         # Streamlit refuses to change a box that is already on screen
         st.button("Reset defaults", on_click=_reset_to_defaults,
-                  use_container_width=True)
+                  width="stretch")
 
     if reforecast:
         overrides = _file_values(build_overrides(_collect_state()))
@@ -955,7 +955,7 @@ with _tab_run:
             "{:.1%}".format)
         _hc_display["Cost / Head (Annual)"] = _hc_display[
             "Cost / Head (Annual)"].map("EUR {:,.0f}".format)
-        st.dataframe(_hc_display, hide_index=True, use_container_width=True)
+        st.dataframe(_hc_display, hide_index=True, width="stretch")
     with _oi_right:
         st.markdown("**Customer Acquisition Targets** (Marketing Spend)")
         _ct_display = _customer_df.copy()
@@ -964,7 +964,7 @@ with _tab_run:
         _ct_display["CAC"] = _ct_display["CAC"].map("EUR {:,.0f}".format)
         _ct_display["Fixed Campaign"] = _ct_display["Fixed Campaign"].map(
             "EUR {:,.0f}".format)
-        st.dataframe(_ct_display, hide_index=True, use_container_width=True)
+        st.dataframe(_ct_display, hide_index=True, width="stretch")
 
     # ---- AI Commentary ----------------------------------------------------
 
@@ -1103,7 +1103,7 @@ with _tab_run:
     if _result is None and _pdf_bytes is not None:
         _dc_pdf, _dc_csv, _ = st.columns([3, 2, 4])
         with _dc_pdf:
-            _pdf_button(_pdf_bytes, _signed, use_container_width=True)
+            _pdf_button(_pdf_bytes, _signed, width="stretch")
     else:
         _dc_csv, _ = st.columns([2, 7])
     with _dc_csv:
@@ -1111,7 +1111,7 @@ with _tab_run:
             "Download CSV", data=_csv_bytes,
             file_name="forecast_pnl.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
 
     # ---- Flags (if any) ---------------------------------------------------

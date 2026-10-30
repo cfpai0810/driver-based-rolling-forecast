@@ -2770,3 +2770,253 @@ class TestStep6cDiagrams:
         # The model appears in exactly one stage
         assert [s["fd-foot"] for s in flow.stages].count("model, language") == 1
         assert not any(s["cross"] for s in flow.stages)
+
+
+# =============================================================================
+# Step 7a: the driver panel starts from the driver file
+# =============================================================================
+# The panel used to start from LINE_DEFAULTS, the sample file's drivers, so with
+# an own driver_table.csv it showed drivers the base forecast did not use, and
+# Re-forecast sent them. These tests point the app at a temporary copy of the
+# driver file with some lines changed; the committed file is never touched.
+
+# The own file of the deferred list: the sample file with two lines on
+# fixed_growth, the older name of growth_pct
+_OWN_FILE = {"Marketing Spend": ("fixed_growth", 1.5),
+             "R&D Expense": ("fixed_growth", 0.05)}
+
+# The panel on opening, as (method boxes, value boxes): from the sample file,
+# and from the own file, where fixed_growth shows as growth_pct
+_SAMPLE_PANEL = (
+    {"method_revenue": "seasonal_yoy", "method_cogs": "margin_pct",
+     "method_personnel_cost": "headcount_driven",
+     "method_marketing_spend": "cac_driven", "method_it_infrastructure": "fixed",
+     "method_r&d_expense": "growth_pct"},
+    {"value_revenue": 12.0, "value_cogs": 41.8,
+     "value_it_infrastructure": 45000.0, "value_r&d_expense": 6.0})
+_OWN_PANEL = (
+    dict(_SAMPLE_PANEL[0], method_marketing_spend="growth_pct"),
+    dict(_SAMPLE_PANEL[1], value_marketing_spend=150.0,
+         **{"value_r&d_expense": 5.0}))
+
+
+@pytest.fixture
+def own_driver_file(tmp_path, monkeypatch):
+    """Points the app at a temporary copy of driver_table.csv with the given
+    lines changed, {line: (driver type, value)}. The page's data cache is
+    cleared before and after, so no other test reads the copy."""
+    import streamlit as st
+    import src.step4_output_writer as writer
+
+    def use(changes):
+        rows = []
+        for row in DRIVER_FILE.read_text(encoding="utf-8").splitlines():
+            line = row.split(",")[0]
+            if line in changes:
+                row = "{},{},{},Own file".format(line, *changes[line])
+            rows.append(row)
+        path = tmp_path / "driver_table.csv"
+        path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        monkeypatch.setattr("config.DRIVER_FILE", path)
+        monkeypatch.setattr(writer, "DRIVER_FILE", path)
+        st.cache_data.clear()
+        return path
+
+    yield use
+    st.cache_data.clear()
+
+
+def _panel(at):
+    """The driver panel as it stands: (method boxes, value boxes)."""
+    return ({s.key: s.value for s in at.selectbox},
+            {n.key: n.value for n in at.number_input})
+
+
+@pytest.fixture
+def pdf_inputs():
+    """Keeps what the page builds each PDF from, (full_df, pnl_df,
+    drivers_df, flags), one entry per build, while the test runs."""
+    import src.step4_output_writer as writer
+    real_build = writer.build_pdf_bytes
+    built = []
+
+    def keep(*args, **kwargs):
+        built.append(args[:4])
+        return real_build(*args, **kwargs)
+
+    with patch("src.step4_output_writer.build_pdf_bytes", side_effect=keep):
+        yield built
+
+
+def _received(at, built, client):
+    """What a Write commentary run received: the figures, flags and drivers
+    of the PDF, the PDF driver table, the prompt, and the run's session audit
+    row and driver text."""
+    full_df, pnl_df, drivers_df, flags = built[-1]
+    (record,) = at.session_state["forecast_audit"]
+    (text,) = [t.value for t in _audit_expander(at).text]
+    return {"full_df": full_df, "pnl_df": pnl_df, "drivers_df": drivers_df,
+            "flags": flags, "pdf_drivers": _driver_rows(drivers_df),
+            "prompt": client.sent,
+            "audit": ({k: record[k] for k in ("fingerprint", "actuals_hash",
+                                              "driver_hash", "effective_drivers",
+                                              "flags", "requires_review")}, text)}
+
+
+class TestStep7aDriverPanel:
+
+    def test_7a_the_panel_opens_on_the_driver_file(self, own_driver_file):
+        # The sample file opens the panel as it always has
+        at = _app("views/forecast.py")
+        at.run()
+        assert not at.exception
+        assert _panel(at) == _SAMPLE_PANEL
+        # An own file opens it on that file's drivers: fixed_growth shows as
+        # month-on-month growth (growth_pct) with the file's value
+        own_driver_file(_OWN_FILE)
+        at = _app("views/forecast.py")
+        at.run()
+        assert not at.exception
+        assert _panel(at) == _OWN_PANEL
+        for key in ("method_marketing_spend", "method_r&d_expense"):
+            box = at.selectbox(key=key)
+            assert box.options[box.index] == "Month-on-month growth"
+
+    def test_7a_an_untouched_reforecast_equals_the_base_forecast(self, own_driver_file,
+                                                                 pdf_inputs):
+        path = own_driver_file(_OWN_FILE)
+        runs, received = {}, {}
+        for reforecast in (False, True):
+            client = _PromptKeeper()
+            at = runs[reforecast] = _live(client)
+            if reforecast:
+                _click(at, "Re-forecast")
+                assert at.session_state["_adjusted"]
+                assert "Showing adjusted forecast." in [s.value for s in at.success]
+            _click(at, "Write commentary")
+            received[reforecast] = _received(at, pdf_inputs, client)
+        base, untouched = received[False], received[True]
+        # The same figures and flags
+        pd.testing.assert_frame_equal(untouched["full_df"], base["full_df"])
+        pd.testing.assert_frame_equal(untouched["pnl_df"], base["pnl_df"])
+        assert untouched["flags"] == base["flags"]
+        # The same drivers, as the prompt, the PDF and the session audit
+        # receive them: the file's own rows, with no override note
+        pd.testing.assert_frame_equal(base["drivers_df"], load_drivers(path))
+        pd.testing.assert_frame_equal(untouched["drivers_df"], base["drivers_df"])
+        assert untouched["pdf_drivers"] == base["pdf_drivers"]
+        assert base["pdf_drivers"]["Marketing Spend"] == (
+            "Month-on-month growth", "150.0%", "Own file")
+        assert untouched["prompt"] == base["prompt"]
+        assert "Overridden in the app" not in base["prompt"]["messages"][0]["content"]
+        assert untouched["audit"] == base["audit"]
+        assert base["audit"][1].splitlines()[3:] == [
+            "Marketing Spend: fixed_growth (150.0%)",
+            "IT Infrastructure: fixed (45,000)",
+            "R&D Expense: fixed_growth (5.0%)"]
+        # The base forecast signed off, then an untouched Re-forecast: the
+        # result is the same, so the commentary and the sign-off stand
+        at = runs[False]
+        _sign(at, "A. Reviewer")
+        assert _section(at)[2][1].startswith(_FINAL_CHIP)
+        _click(at, "Re-forecast")
+        assert at.session_state["_adjusted"]
+        assert "_commentary_text" in at.session_state
+        assert _section(at)[2][1].startswith(_FINAL_CHIP)
+        assert _labels(at) == ["Download CSV", "Download the FINAL PDF"]
+
+    def test_7a_reset_defaults_returns_the_panel_to_the_driver_file(self, own_driver_file):
+        own_driver_file(_OWN_FILE)
+        at = _app("views/forecast.py")
+        at.run()
+        assert not at.exception
+        # A line switched away from the file's method and back gets the
+        # file's value again
+        at.selectbox(key="method_marketing_spend").set_value("fixed").run()
+        assert at.number_input(key="value_marketing_spend").value == 0.0
+        at.selectbox(key="method_marketing_spend").set_value("growth_pct").run()
+        assert at.number_input(key="value_marketing_spend").value == 150.0
+        # Several changes and a Re-forecast, then Reset defaults: the panel is
+        # the file's again, and so is the forecast on screen
+        at.selectbox(key="method_r&d_expense").set_value("fixed").run()
+        at.number_input(key="value_revenue").set_value(15.0).run()
+        at.number_input(key="value_marketing_spend").set_value(20.0).run()
+        _click(at, "Re-forecast")
+        assert at.session_state["_adjusted"]
+        _click(at, "Reset defaults")
+        assert _panel(at) == _OWN_PANEL
+        assert not at.session_state["_adjusted"]
+
+    def test_7a_a_file_driver_the_menu_does_not_offer(self, own_driver_file, pdf_inputs):
+        # IT Infrastructure as a share of revenue, which its menu does not
+        # offer, and R&D Expense falling 60% a month, below the value box's
+        # usual floor of -50%: the panel opens on both as the file gives them
+        own_driver_file({"IT Infrastructure": ("margin_pct", 0.05),
+                         "R&D Expense": ("growth_pct", -0.6)})
+        at = _app("views/forecast.py")
+        at.run()
+        assert not at.exception
+        it = at.selectbox(key="method_it_infrastructure")
+        assert it.value == "margin_pct"
+        assert it.options == ["Margin % of revenue", "Fixed amount",
+                              "Month-on-month growth"]
+        assert at.number_input(key="value_it_infrastructure").value == 5.0
+        assert at.number_input(key="value_r&d_expense").value == -60.0
+        # An untouched Re-forecast runs exactly the base forecast
+        _click(at, "Re-forecast")
+        assert at.session_state["_adjusted"]
+        base, untouched = pdf_inputs[0], pdf_inputs[-1]
+        for a, b in zip(base[:3], untouched[:3]):
+            pd.testing.assert_frame_equal(a, b)
+        assert base[3] == untouched[3]
+
+    def test_7a_an_untouched_line_sends_the_files_own_value(self, own_driver_file,
+                                                           pdf_inputs):
+        # 0.056 shows as 5.6000000000000005 and 0.378 as 37.8, and neither
+        # turns back into the same float: an untouched Re-forecast still
+        # sends the engine the file's own value, so it runs exactly the base
+        from streamlit_app.lib.driver_controls import to_display, to_engine
+        changes = {"R&D Expense": ("growth_pct", 0.056),
+                   "COGS": ("margin_pct", 0.378)}
+        for method, value in changes.values():
+            assert to_engine(method, to_display(method, value)) != value
+        own_driver_file(changes)
+        import src.step2_forecast_engine as engine
+        real_forecast = engine.calculate_forecast
+        sent = []
+
+        def keep(*args, **kwargs):
+            sent.append(kwargs.get("driver_overrides"))
+            return real_forecast(*args, **kwargs)
+
+        with patch("src.step2_forecast_engine.calculate_forecast", side_effect=keep):
+            at = _app("views/forecast.py")
+            at.run()
+            assert not at.exception
+            _click(at, "Re-forecast")
+            assert at.session_state["_adjusted"]
+        overrides = sent[-1]
+        for line, (method, value) in changes.items():
+            assert overrides[line] == {"method": method, "value": value}
+        base, untouched = pdf_inputs[0], pdf_inputs[-1]
+        assert untouched[0].equals(base[0])
+        assert untouched[1].equals(base[1])
+
+    def test_7a_the_guide_names_every_driver_type(self):
+        import re
+        from config import VALID_DRIVER_TYPES
+        guide = (Path(__file__).resolve().parent.parent / "docs"
+                 / "bring_your_own_data.md").read_text(encoding="utf-8")
+        block = guide.split("Driver types:")[1].split("```")[0]
+        assert sorted(re.findall(r"^- `(\w+)` - ", block, re.M)) == sorted(
+            VALID_DRIVER_TYPES)
+        (entry,) = [" ".join(e.split()) for e in block.split("\n- ")
+                    if e.startswith("`fixed_growth`")]
+        assert "the older name of `growth_pct`" in entry
+        assert "month-on-month growth" in entry
+        # The Your own data page shows the guide, fixed_growth with it
+        at = _app("views/your_own_data.py")
+        at.run()
+        assert not at.exception
+        assert any("`fixed_growth` - the older name of `growth_pct`" in m.value
+                   for m in at.markdown)

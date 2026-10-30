@@ -70,6 +70,9 @@ Driver types:
 - `margin_pct` - cost as a fraction of Revenue (`0.418` = 41.8%).
 - `fixed` - absolute monthly amount (`45000.0`).
 - `growth_pct` - month-on-month growth as a fraction (`0.06` = 6%).
+- `fixed_growth` - the older name of `growth_pct`, still accepted: month-on-month
+  growth as a fraction, worked out the same way. The web app shows it as
+  month-on-month growth.
 - `headcount_driven` - set the value to `0.0`; the real input is
   `headcount_schedule.csv`.
 - `cac_driven` - set the value to `0.0`; the real input is `customer_targets.csv`.
@@ -146,8 +149,10 @@ click Write commentary.
 ## Adjusting drivers in the web app
 
 The Forecast page lets you change any driver's method and value in its Driver
-assumptions panel without editing CSV files. Changes take effect when you click
-Re-forecast. The base forecast is cached, so resetting to defaults is instant.
+assumptions panel without editing CSV files. The panel opens on the drivers in
+your `driver_table.csv`, and Reset defaults puts them back. Changes take effect
+when you click Re-forecast. The base forecast is cached, so resetting to defaults
+is instant.
 
 ## Constraints worth knowing
 

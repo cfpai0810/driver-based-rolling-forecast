@@ -122,12 +122,19 @@ def _adjusted_forecast(overrides):
     return full_df, pnl_df, driver_detail, flags, last_actual, forecast_periods
 
 
+def _panel_method(driver_type):
+    """The driver panel's method for a driver file's driver type:
+    fixed_growth, the older name of growth_pct, is month-on-month growth."""
+    return "growth_pct" if driver_type == "fixed_growth" else driver_type
+
+
 def _effective_drivers(base_drivers_df, overrides):
     """Return a drivers_df reflecting any user overrides, so build_prompt
     and the PDF driver table show the adjusted assumptions rather than the
     CSV defaults. A line whose method or value changed gets a note stating
     the new value (its CSV note states the old one); a line left at its CSV
-    value keeps its note."""
+    driver keeps its row as the CSV has it (fixed_growth and growth_pct are
+    the same method)."""
     if not overrides:
         return base_drivers_df
     df = base_drivers_df.copy()
@@ -137,14 +144,31 @@ def _effective_drivers(base_drivers_df, overrides):
         mask = df["line_item"] == line
         if mask.any():
             base = df.loc[mask].iloc[0]
-            changed = ov["method"] != base["driver_type"] or not math.isclose(
-                float(ov["value"]), float(base["driver_value"]),
-                rel_tol=1e-9, abs_tol=1e-12)
-            df.loc[mask, "driver_type"] = ov["method"]
-            df.loc[mask, "driver_value"] = ov["value"]
+            changed = (ov["method"] != _panel_method(base["driver_type"])
+                       or not math.isclose(
+                           float(ov["value"]), float(base["driver_value"]),
+                           rel_tol=1e-9, abs_tol=1e-12))
             if changed:
+                df.loc[mask, "driver_type"] = ov["method"]
+                df.loc[mask, "driver_value"] = ov["value"]
                 df.loc[mask, "note"] = override_note(ov["method"], ov["value"])
     return df
+
+
+def _file_values(overrides):
+    """The panel's overrides, with each line left at the driver file's
+    driver sending the file's own value. A value box holds the display form
+    (a percentage times 100), which does not always turn back into the same
+    float, so this keeps an untouched Re-forecast exactly the base forecast."""
+    rows = {row["line_item"]: row for _, row in _load_data()[1].iterrows()}
+    for line, ov in (overrides or {}).items():
+        row = rows.get(line)
+        if (row is not None
+                and ov["method"] == _panel_method(row["driver_type"])
+                and math.isclose(float(ov["value"]), float(row["driver_value"]),
+                                 rel_tol=1e-9, abs_tol=1e-12)):
+            ov["value"] = row["driver_value"]
+    return overrides
 
 
 # ---------------------------------------------------------------------------
@@ -369,11 +393,31 @@ _COMMENTARY_KEYS = ("_commentary_text", "_commentary_cost", "_commentary_fp",
                     "_commentary_stop", "_commentary_run")
 
 
+def _file_drivers():
+    """Each line's driver in the loaded driver file, the one the base
+    forecast uses, as the panel shows it: {line: {"method", "value"}}, in
+    the shape of LINE_DEFAULTS. fixed_growth shows as growth_pct, and a
+    schedule has no value. A line the file does not list falls back to
+    LINE_DEFAULTS."""
+    rows = {row["line_item"]: row for _, row in _load_data()[1].iterrows()}
+    drivers = {}
+    for line, dflt in LINE_DEFAULTS.items():
+        if line not in rows:
+            drivers[line] = dflt
+            continue
+        method = _panel_method(rows[line]["driver_type"])
+        drivers[line] = {
+            "method": method,
+            "value": (None if METHOD_VALUE_SHAPE[method] == "schedule"
+                      else float(rows[line]["driver_value"]))}
+    return drivers
+
+
 def _init_state():
-    """Seed session state with defaults on first load."""
+    """Seed session state with the driver file's drivers on first load."""
     if "_drv_init" in st.session_state:
         return
-    for line, dflt in LINE_DEFAULTS.items():
+    for line, dflt in _file_drivers().items():
         k = _LINE_KEYS[line]
         st.session_state["method_{}".format(k)] = dflt["method"]
         st.session_state["_prev_{}".format(k)]  = dflt["method"]
@@ -385,9 +429,10 @@ def _init_state():
 
 
 def _detect_method_changes():
-    """If a method selector changed since the last render, set a sensible
-    default value for the new method before widgets render."""
-    for line, dflt in LINE_DEFAULTS.items():
+    """If a method selector changed since the last render, set a value for
+    the new method before widgets render: the driver file's value when the
+    line is back on the file's method, else a sensible default."""
+    for line, dflt in _file_drivers().items():
         k = _LINE_KEYS[line]
         cur  = st.session_state.get("method_{}".format(k), dflt["method"])
         prev = st.session_state.get("_prev_{}".format(k), cur)
@@ -405,7 +450,7 @@ def _detect_method_changes():
 
 def _reset_to_defaults():
     """Reset all driver controls to their CSV defaults."""
-    for line, dflt in LINE_DEFAULTS.items():
+    for line, dflt in _file_drivers().items():
         k = _LINE_KEYS[line]
         st.session_state["method_{}".format(k)] = dflt["method"]
         st.session_state["_prev_{}".format(k)]  = dflt["method"]
@@ -593,7 +638,7 @@ def _inputs_changed():
     else:
         shown = build_overrides({
             line: (d["method"], to_display(d["method"], d["value"]))
-            for line, d in LINE_DEFAULTS.items()})
+            for line, d in _file_drivers().items()})
     return not _same_overrides(build_overrides(_collect_state()), shown)
 
 
@@ -787,11 +832,17 @@ with _tab_run:
         hc2.markdown("**Driver method**")
         hc3.markdown("**Value**")
 
+        file_drivers = _file_drivers()
         for line in LINE_DEFAULTS:
             k = _LINE_KEYS[line]
             method_key = "method_{}".format(k)
             value_key  = "value_{}".format(k)
+            own = file_drivers[line]
             methods = ALLOWED_METHODS[line]
+            if own["method"] not in methods:
+                # The driver file's method, though the menu does not offer
+                # it: the panel opens on what the base forecast uses
+                methods = [own["method"]] + methods
 
             c1, c2, c3 = st.columns([3, 4, 3])
 
@@ -809,6 +860,11 @@ with _tab_run:
 
             method = st.session_state[method_key]
             shape  = METHOD_VALUE_SHAPE[method]
+            # On the file's own method the box goes down to the file's value,
+            # so a value below the usual floor shows as the file gives it
+            own_low = (to_display(method, own["value"])
+                       if method == own["method"] and own["value"] is not None
+                       else math.inf)
 
             with c3:
                 if shape == "schedule":
@@ -825,7 +881,7 @@ with _tab_run:
                     pct_floor = 0.0 if method == "margin_pct" else -50.0
                     st.number_input(
                         _VALUE_LABELS[method],
-                        min_value=pct_floor,
+                        min_value=min(pct_floor, own_low),
                         step=0.5,
                         format="%.1f",
                         key=value_key,
@@ -834,7 +890,7 @@ with _tab_run:
                 else:
                     st.number_input(
                         _VALUE_LABELS[method],
-                        min_value=0.0,
+                        min_value=min(0.0, own_low),
                         step=1000.0,
                         format="%.0f",
                         key=value_key,
@@ -854,7 +910,7 @@ with _tab_run:
                   use_container_width=True)
 
     if reforecast:
-        overrides = build_overrides(_collect_state())
+        overrides = _file_values(build_overrides(_collect_state()))
         result = _adjusted_forecast(overrides)
         st.session_state["_adj_result"] = result
         st.session_state["_adj_overrides"] = overrides

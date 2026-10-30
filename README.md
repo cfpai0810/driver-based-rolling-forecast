@@ -241,7 +241,7 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               155 tests
+  test_pipeline.py               159 tests
   test_signoff.py                9 tests: the sign-off rule
 ```
 
@@ -287,7 +287,7 @@ so any run is fully reproducible.
 
 ## Test suite
 
-164 tests, no real API calls:
+168 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt

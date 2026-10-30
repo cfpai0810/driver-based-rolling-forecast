@@ -21,7 +21,7 @@
 #  12. Commentary helpers        — fingerprint stability, section parsing, HTML
 #  13. Shared output builders    — PDF/CSV bytes, data hashes, requires_review
 #  14. Session audit record      — audit shape, drivers, overrides
-#  15. Keyless example and diagrams — example fingerprint, commentary, SVG
+#  15. Keyless example and diagrams: example fingerprint, commentary, HTML
 #
 # The classes after them cover the deployment pin and the review fixes: the
 # key gate, plain messages for failed model calls, PDF text, the Home and
@@ -1029,7 +1029,7 @@ class TestAuditRecord:
 # =====================================================================
 
 class TestKeylessExampleAndDiagrams:
-    """Phase 7: example commentary, fingerprint match, and SVG diagrams."""
+    """Phase 7: example commentary, fingerprint match, and the diagrams in HTML."""
 
     def test_example_fingerprint_matches_base(self, actuals_df, drivers_df,
                                                operational_df, headcount_df,
@@ -1070,32 +1070,35 @@ class TestKeylessExampleAndDiagrams:
         assert "4,941,688" in text
         assert "542,191" in text
 
-    def test_governance_flow_svg_valid(self):
-        """governance_flow_svg returns a non-empty SVG string."""
-        from streamlit_app.lib.governance_flow import governance_flow_svg
-        svg = governance_flow_svg()
-        assert "<svg" in svg
-        assert "viewBox" in svg
-        assert "YOU SET DRIVERS" in svg
-        assert "YOU SIGN OFF" in svg   # the web's Sign-off section (Step 5b)
-        assert "APPROVE" not in svg   # no approval step on the web
+    def test_governance_flow_html_valid(self):
+        """governance_flow_html returns the diagram as an HTML list (Step 6c:
+        it was an SVG string)."""
+        from streamlit_app.lib.governance_flow import governance_flow_html
+        html = governance_flow_html()
+        assert html.startswith('<figure class="fd">')
+        assert '<ol class="fd-flow" aria-label="' in html
+        assert "YOU SET DRIVERS" in html
+        assert "YOU SIGN OFF" in html   # the web's Sign-off section (Step 5b)
+        assert "APPROVE" not in html   # no approval step on the web
 
-    def test_pipeline_flow_svg_valid(self):
-        """pipeline_flow_svg returns a non-empty SVG string."""
-        from streamlit_app.lib.pipeline_flow import pipeline_flow_svg
-        svg = pipeline_flow_svg()
-        assert "<svg" in svg
-        assert "viewBox" in svg
-        assert "Forecast" in svg
-        assert "Commentary" in svg
-        assert "deterministic" in svg
+    def test_pipeline_flow_html_valid(self):
+        """pipeline_flow_html returns the diagram as an HTML list (Step 6c:
+        it was an SVG string)."""
+        from streamlit_app.lib.pipeline_flow import pipeline_flow_html
+        html = pipeline_flow_html()
+        assert html.startswith('<figure class="fd">')
+        assert '<ol class="fd-flow" aria-label="' in html
+        assert "Forecast" in html
+        assert "Commentary" in html
+        assert "deterministic" in html
 
-    def test_governance_lifecycle_svg_exists(self):
-        """governance_lifecycle_svg returns a valid SVG (pre-existing)."""
-        from streamlit_app.lib.governance_lifecycle import governance_lifecycle_svg
-        svg = governance_lifecycle_svg()
-        assert "<svg" in svg
-        assert "YOU REVIEW" in svg
+    def test_governance_lifecycle_html_exists(self):
+        """governance_lifecycle_html returns the diagram as an HTML list
+        (pre-existing; Step 6c: it was an SVG string)."""
+        from streamlit_app.lib.governance_lifecycle import governance_lifecycle_html
+        html = governance_lifecycle_html()
+        assert html.startswith('<figure class="fd">')
+        assert "YOU REVIEW" in html
 
 
 class TestDeploymentPins:
@@ -2391,9 +2394,9 @@ class TestStep5bSignOff:
         assert promise.splitlines()[-1] == (
             "- **The reviewer signs.** Nothing is final until a named reviewer reads "
             "it and signs.")
-        from streamlit_app.lib.governance_flow import governance_flow_svg
-        from streamlit_app.lib.governance_lifecycle import governance_lifecycle_svg
-        flow = governance_flow_svg()
+        from streamlit_app.lib.governance_flow import governance_flow_html
+        from streamlit_app.lib.governance_lifecycle import governance_lifecycle_html
+        flow = governance_flow_html()
         assert "YOU SIGN OFF" in flow
         assert "You set the drivers and sign off the output." in flow
         built = (APP_DIR / "views" / "how_its_built.py").read_text(encoding="utf-8")
@@ -2407,7 +2410,7 @@ class TestStep5bSignOff:
             source = path.read_text(encoding="utf-8")
             assert not [s for s in stale if s in source], path.name
         # The lifecycle diagram is the production design: it still approves and locks
-        lifecycle = governance_lifecycle_svg()
+        lifecycle = governance_lifecycle_html()
         assert "YOU APPROVE" in lifecycle and "LOCKED" in lifecycle
 
 
@@ -2580,3 +2583,190 @@ class TestStep6b:
             "Marketing Spend: cac_driven",
             "IT Infrastructure: fixed (0)",
             "R&D Expense: growth_pct (6.0%)"]
+
+
+# =============================================================================
+# Step 6c: the How it's built diagrams, readable on a phone
+# =============================================================================
+# The three diagrams were SVG in fixed-height frames, so on a phone their text
+# shrank to about 4 px and a blank gap followed. They are now HTML lists drawn
+# by lib/flow_diagram.py: a row of boxes from 640 px, stacked below that. These
+# tests read the page as AppTest renders it and check each diagram's words, its
+# accessible name (the old SVG's aria-label) and the order of its stages.
+
+from html.parser import HTMLParser
+
+GOVERNANCE_FLOW = {
+    "label": "How a forecast run is governed: you set each driver's method and "
+             "value, deterministic code computes every P and L line with the model "
+             "absent from the numbers, the model narrates the calculated figures, "
+             "rules flag anything that needs scrutiny, and you review and sign off "
+             "the result.",
+    "head": "You set the drivers and sign off the output. The model works only in "
+            "between.",
+    "stages": [
+        ("YOU SET DRIVERS", "Choose each line's method and value", "the person"),
+        ("PYTHON FORECASTS", "Deterministic code runs every P&L line", "no model here"),
+        ("THE MODEL NARRATES", "Commentary on the calculated figures",
+         "words, not numbers"),
+        ("MARKED FOR REVIEW", "Rules flag when the output needs scrutiny",
+         "deterministic"),
+        ("YOU SIGN OFF", "You review and sign off the result", "the person"),
+    ],
+    "note": "Every step is written to the audit record, so any run can be "
+            "reconstructed afterwards.",
+    "key": ["You", "The model, for language", "Deterministic code, for numbers"],
+}
+LIFECYCLE = {
+    "label": "The governance lifecycle: you review the flagged output, approve the "
+             "report, the approved version is locked and becomes immutable, everyone "
+             "reads the locked record, and a change requires a new separately "
+             "approved version.",
+    "head": "Review is the start of the record, not the end.",
+    "stages": [
+        ("YOU REVIEW", "Check the flagged output and data", "the person"),
+        ("YOU APPROVE", "Sign off the report as final", "the person"),
+        ("LOCKED", "The approved report becomes immutable", "the record"),
+        ("READ ONLY", "Everyone reads it, no one edits it", "the record"),
+        ("RE-ISSUE", "A new version; the original still stands", "the person"),
+    ],
+    "note": "The live demo stops at a typed sign-off. The stages beyond show the "
+            "production model this design is built towards.",
+    "key": ["You", "The immutable record"],
+}
+PIPELINE = {
+    "label": "The pipeline: a deterministic data stage loads five CSV files and "
+             "finds the forecast horizon; a deterministic forecast stage applies "
+             "driver-based calculations to every P and L line; a deterministic "
+             "validate stage checks bounds and flags anomalies; the model narrates "
+             "the computed figures in a commentary stage; and a deterministic output "
+             "stage writes the PDF, CSV, and audit record. Only the commentary stage "
+             "uses the model; everything numeric is deterministic.",
+    "head": "The model appears in one stage only. Everything numeric is deterministic.",
+    "stages": [
+        ("Data", "load five CSVs, find horizon", "deterministic"),
+        ("Forecast", "driver-based calc, build P&L", "deterministic"),
+        ("Validate", "check bounds, flag anomalies", "deterministic"),
+        ("Commentary", "narrate the computed figures", "model, language"),
+        ("Output", "PDF, CSV, audit record", "deterministic"),
+    ],
+    "note": "The commentary stage is handed already-final figures. The model "
+            "narrates; it does not calculate.",
+    "key": ["Model, for language", "Deterministic code, for numbers"],
+}
+
+
+class _Diagram(HTMLParser):
+    """One flow diagram's HTML read back: the list's accessible name, the
+    heading, the note, the colour key, and each stage's parts by class."""
+
+    def __init__(self, markup):
+        super().__init__()
+        self.label, self.head, self.note, self.key, self.stages = None, None, None, [], []
+        self._open = []
+        self.feed(markup)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        classes = (attrs.get("class") or "").split()
+        if tag == "ol" and "fd-flow" in classes:
+            self.label = attrs.get("aria-label")
+        if tag == "li" and "fd-stage" in classes:
+            self.stages.append({"cross": "fd-cross" in classes})
+        self._open.append(classes)
+
+    def handle_endtag(self, tag):
+        self._open.pop()
+
+    def handle_data(self, data):
+        words, classes = data.strip(), self._open[-1] if self._open else []
+        if not words:
+            return
+        if ["fd-key"] in self._open:
+            self.key.append(words)
+        elif "fd-head" in classes:
+            self.head = words
+        elif "fd-note" in classes:
+            self.note = words
+        elif classes and classes[0] in ("fd-zone", "fd-title", "fd-text", "fd-foot"):
+            self.stages[-1][classes[0]] = words
+
+
+@pytest.fixture(scope="class")
+def how_its_built():
+    """The How it's built page as AppTest renders it, and its flow diagrams read
+    back in page order, each with its place among the page's markdown."""
+    at = _app("Home.py")
+    at.run()
+    at.switch_page("views/how_its_built.py").run()
+    assert not at.exception
+    flows = [(i, _Diagram(m.value)) for i, m in enumerate(at.main.markdown)
+             if m.value.startswith('<figure class="fd">')]
+    return at, flows
+
+
+def _check_flow(flow, expected):
+    """A diagram has the expected words, and its stages in the expected order."""
+    assert flow.label == expected["label"]
+    assert flow.head == expected["head"]
+    assert [(s["fd-title"], s["fd-text"], s["fd-foot"]) for s in flow.stages] == \
+        expected["stages"]
+    assert flow.note == expected["note"]
+    assert flow.key == expected["key"]
+
+
+class TestStep6cDiagrams:
+
+    def test_6c_diagrams_are_html_lists_not_frames(self, how_its_built):
+        import re
+        at, flows = how_its_built
+        assert not at.get("iframe"), "no fixed-height frame left on the page"
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        # Each sits where its frame was, in page order: the governance flow just
+        # under the page banner, the other two just under their lead-in
+        values = [m.value for m in at.main.markdown]
+        (banner,) = [i for i, v in enumerate(values) if v.startswith('<div class="sc-header">')]
+        leads = ["#### The governance lifecycle", "**The pipeline.**"]
+        assert [i for i, _ in flows] == [banner + 1] + [values.index(lead) + 1
+                                                        for lead in leads]
+        # The CSS is in inject_css: stacked on a phone, a row from 640 px, and
+        # no text in a diagram under 13 px
+        from streamlit_app.lib import flow_diagram, theme
+        flow_css = flow_diagram.flow_css(theme.DARK_BLUE, theme.MUTED, theme.RULE)
+        assert flow_css in theme.inject_css()
+        assert "@media (min-width: 640px)" in flow_css and "ol.fd-flow" in flow_css
+        sizes = [int(s) for s in re.findall(r"font-size: (\d+)px", flow_css)]
+        assert sizes and min(sizes) >= 13
+        # The renderer imports nothing from an app, so it copies byte for byte
+        source = Path(flow_diagram.__file__).read_text(encoding="utf-8")
+        assert "import streamlit_app" not in source and "from streamlit_app" not in source
+
+    def test_6c_governance_flow_stages_in_order(self, how_its_built):
+        _, flows = how_its_built
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        flow = flows[0][1]
+        _check_flow(flow, GOVERNANCE_FLOW)
+        assert not any(s["cross"] for s in flow.stages)
+
+    def test_6c_lifecycle_stages_in_order_with_the_demo_boundary(self, how_its_built):
+        _, flows = how_its_built
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        flow = flows[1][1]
+        _check_flow(flow, LIFECYCLE)
+        titles = [s["fd-title"] for s in flow.stages]
+        assert "YOU APPROVE" in titles and "LOCKED" in titles
+        # The live demo ends after YOU REVIEW: the boundary sits just before YOU
+        # APPROVE, with a label for the zone on each side
+        assert [s["cross"] for s in flow.stages] == [False, True, False, False, False]
+        assert [(s.get("fd-zone"), s["fd-title"]) for s in flow.stages[:2]] == [
+            ("Live demo", "YOU REVIEW"), ("Production workflow", "YOU APPROVE")]
+        assert all("fd-zone" not in s for s in flow.stages[2:])
+
+    def test_6c_pipeline_stages_in_order(self, how_its_built):
+        _, flows = how_its_built
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        flow = flows[2][1]
+        _check_flow(flow, PIPELINE)
+        # The model appears in exactly one stage
+        assert [s["fd-foot"] for s in flow.stages].count("model, language") == 1
+        assert not any(s["cross"] for s in flow.stages)

@@ -12,16 +12,15 @@ import sys
 from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from streamlit_app.lib.theme import inject_css, header_html
-from streamlit_app.lib.governance_flow import governance_flow_svg
-from streamlit_app.lib.governance_lifecycle import governance_lifecycle_svg
-from streamlit_app.lib.pipeline_flow import pipeline_flow_svg
+from streamlit_app.lib.governance_flow import governance_flow_html
+from streamlit_app.lib.governance_lifecycle import governance_lifecycle_html
+from streamlit_app.lib.pipeline_flow import pipeline_flow_html
 
 st.markdown(inject_css(), unsafe_allow_html=True)
 
@@ -31,7 +30,7 @@ st.markdown(header_html(
     unsafe_allow_html=True)
 
 # Who owns each step of a run: the diagram that opened the Home page
-components.html(governance_flow_svg(), height=220, scrolling=False)
+st.markdown(governance_flow_html(), unsafe_allow_html=True)
 
 st.write(
     "This tool was built on one principle: an AI system that touches financial "
@@ -80,7 +79,7 @@ st.info(
     "checkable.")
 
 st.markdown("#### The governance lifecycle")
-components.html(governance_lifecycle_svg(), height=310, scrolling=False)
+st.markdown(governance_lifecycle_html(), unsafe_allow_html=True)
 st.write(
     "In a production deployment, review is the start of the record, not "
     "the end. Once a reviewer approves the commentary, the approved version "
@@ -101,7 +100,7 @@ st.write(
     "deliberate and strict.")
 
 st.markdown("**The pipeline.**")
-components.html(pipeline_flow_svg(), height=260, scrolling=False)
+st.markdown(pipeline_flow_html(), unsafe_allow_html=True)
 st.write(
     "Each stage has one job. The data layer loads five CSV files and finds the "
     "boundary between actuals and the forecast horizon. The forecast engine "

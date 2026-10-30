@@ -2484,6 +2484,36 @@ class TestStep6aViews:
 # audit's driver values in their method's own shape
 # =============================================================================
 
+def _pdf_places(at):
+    """Every PDF download button on "Run it yourself", in page order, as
+    (place, label). The place is "row" in the downloads row (the columns
+    under the Downloads heading, beside Download CSV), "section" in the
+    Sign-off section (after its heading, before the Session audit), or
+    "other" anywhere else."""
+    from streamlit.testing.v1.element_tree import Block
+    places, heading = [], None
+    for node in at.tabs[1].children.values():
+        if node.type == "markdown" and node.value in ("#### Downloads", "#### Sign-off"):
+            heading = node.value
+            continue
+        if heading == "#### Sign-off" and node.type == "expander":
+            heading = None    # the Session audit: the section has ended
+        buttons = (node.get("download_button") if isinstance(node, Block)
+                   else [node] if node.type == "download_button" else [])
+        labels = [b.proto.label for b in buttons]
+        for label in labels:
+            if "pdf" not in label.lower():
+                continue
+            if heading == "#### Sign-off" and not isinstance(node, Block):
+                place = "section"
+            elif heading == "#### Downloads" and "Download CSV" in labels:
+                place = "row"
+            else:
+                place = "other"
+            places.append((place, label))
+    return places
+
+
 class TestStep6b:
 
     def test_6b1_the_pdf_button_sits_in_the_signoff_section(self, downloads):
@@ -2508,6 +2538,32 @@ class TestStep6b:
         assert _labels(at) == ["Download CSV", "Download the FINAL PDF"]
         assert "FINAL: signed off by A. Reviewer" in _pdf_lines(
             downloads(at, "Download the FINAL PDF"))
+
+    def test_6b1_one_pdf_button_in_every_state(self):
+        # Exactly one PDF button on screen in every state, labelled by the
+        # sign-off that stands. With no commentary there is no Sign-off
+        # section, so the DRAFT PDF sits in the downloads row beside the
+        # CSV; once there is commentary it sits after the Sign-off heading,
+        # and none above it.
+        def one_pdf(label, place):
+            pdfs = [d.proto.label for d in at.get("download_button")
+                    if "pdf" in d.proto.label.lower()]
+            assert pdfs == [label]
+            headings = [m.value for m in at.markdown if m.value == "#### Sign-off"]
+            assert headings == ([] if place == "row" else ["#### Sign-off"])
+            assert _pdf_places(at) == [(place, label)]
+
+        at = _live()
+        one_pdf("Download the DRAFT PDF", "row")          # no commentary
+        _click(at, "Write commentary")
+        one_pdf("Download the DRAFT PDF", "section")      # DRAFT
+        # Stale: a driver changed after the commentary, Sign off waits
+        at.number_input(key="value_r&d_expense").set_value(10.0).run()
+        assert _sign_buttons(at)[0].disabled
+        one_pdf("Download the DRAFT PDF", "section")
+        at.number_input(key="value_r&d_expense").set_value(6.0).run()
+        _sign(at, "A. Reviewer")
+        one_pdf("Download the FINAL PDF", "section")      # FINAL
 
     def test_6b3_audit_prints_each_driver_value_in_its_own_shape(self):
         at = _live()

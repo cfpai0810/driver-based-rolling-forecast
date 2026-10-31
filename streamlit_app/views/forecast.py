@@ -398,7 +398,7 @@ def _file_drivers():
     forecast uses, as the panel shows it: {line: {"method", "value"}}, in
     the shape of LINE_DEFAULTS. fixed_growth shows as growth_pct, and a
     schedule has no value. A line the file does not list falls back to
-    LINE_DEFAULTS."""
+    LINE_DEFAULTS for its controls only (see _panel_overrides)."""
     rows = {row["line_item"]: row for _, row in _load_data()[1].iterrows()}
     drivers = {}
     for line, dflt in LINE_DEFAULTS.items():
@@ -411,6 +411,38 @@ def _file_drivers():
             "value": (None if METHOD_VALUE_SHAPE[method] == "schedule"
                       else float(rows[line]["driver_value"]))}
     return drivers
+
+
+def _unset_lines(state):
+    """The lines the driver file does not list whose controls, in
+    {line: (method, display_val)}, are still as the panel opened them, in
+    the panel's order. The base forecast has no driver for them and flags
+    each as MISSING_DRIVER. A change of method or value sets a line;
+    changing it back, or Reset defaults, leaves it unset again."""
+    listed = set(_load_data()[1]["line_item"])
+    opened = _file_drivers()
+    unset = []
+    for line in LINE_DEFAULTS:
+        if line in listed:
+            continue
+        method, display_val = state[line]
+        dflt = opened[line]
+        if method == dflt["method"] and (
+                dflt["value"] is None or math.isclose(
+                    float(display_val), to_display(method, dflt["value"]),
+                    rel_tol=1e-9, abs_tol=1e-12)):
+            unset.append(line)
+    return unset
+
+
+def _panel_overrides(state):
+    """The overrides for the panel's {line: (method, display_val)}, less
+    each line the driver file does not list while it is unset: the page
+    must not invent a driver the file does not have, so an untouched
+    Re-forecast leaves the line out, as the base forecast does."""
+    unset = _unset_lines(state)
+    return build_overrides({line: s for line, s in state.items()
+                            if line not in unset})
 
 
 def _init_state():
@@ -636,10 +668,10 @@ def _inputs_changed():
     if st.session_state.get("_adjusted") and "_adj_result" in st.session_state:
         shown = st.session_state.get("_adj_overrides")
     else:
-        shown = build_overrides({
+        shown = _panel_overrides({
             line: (d["method"], to_display(d["method"], d["value"]))
             for line, d in _file_drivers().items()})
-    return not _same_overrides(build_overrides(_collect_state()), shown)
+    return not _same_overrides(_panel_overrides(_collect_state()), shown)
 
 
 def _result_fingerprint(pnl_df, drivers_df, flags):
@@ -897,6 +929,15 @@ with _tab_run:
                         label_visibility="collapsed",
                     )
 
+    # A line the driver file does not list, while it is unset: Re-forecast
+    # leaves it out, so the panel says so
+    _unset = _unset_lines(_collect_state())
+    if _unset:
+        st.caption("Not in your driver file: {}. {} not forecast until you "
+                   "set a driver.".format(", ".join(_unset),
+                                          "It is" if len(_unset) == 1
+                                          else "They are"))
+
     # ---- Action buttons ---------------------------------------------------
 
     btn_l, btn_r, _ = st.columns([2, 2, 5])
@@ -910,7 +951,7 @@ with _tab_run:
                   width="stretch")
 
     if reforecast:
-        overrides = _file_values(build_overrides(_collect_state()))
+        overrides = _file_values(_panel_overrides(_collect_state()))
         result = _adjusted_forecast(overrides)
         st.session_state["_adj_result"] = result
         st.session_state["_adj_overrides"] = overrides

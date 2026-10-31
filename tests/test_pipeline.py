@@ -2803,8 +2803,9 @@ _OWN_PANEL = (
 @pytest.fixture
 def own_driver_file(tmp_path, monkeypatch):
     """Points the app at a temporary copy of driver_table.csv with the given
-    lines changed, {line: (driver type, value)}. The page's data cache is
-    cleared before and after, so no other test reads the copy."""
+    lines changed, {line: (driver type, value)}, or left out, {line: None}.
+    The page's data cache is cleared before and after, so no other test
+    reads the copy."""
     import streamlit as st
     import src.step4_output_writer as writer
 
@@ -2813,6 +2814,8 @@ def own_driver_file(tmp_path, monkeypatch):
         for row in DRIVER_FILE.read_text(encoding="utf-8").splitlines():
             line = row.split(",")[0]
             if line in changes:
+                if changes[line] is None:
+                    continue
                 row = "{},{},{},Own file".format(line, *changes[line])
             rows.append(row)
         path = tmp_path / "driver_table.csv"
@@ -3020,6 +3023,163 @@ class TestStep7aDriverPanel:
         assert not at.exception
         assert any("`fixed_growth` - the older name of `growth_pct`" in m.value
                    for m in at.markdown)
+
+
+# A line the driver file leaves out has no driver in the base forecast, which
+# flags it MISSING_DRIVER and builds no rows for it. The panel used to fill it
+# from LINE_DEFAULTS, so an untouched Re-forecast forecast it and the flag went.
+# This file leaves out a schedule line and a value line.
+_MISSING = {"Marketing Spend": None, "IT Infrastructure": None}
+_BOTH_MISSING = ("Not in your driver file: Marketing Spend, IT Infrastructure. "
+                 "They are not forecast until you set a driver.")
+
+
+def _not_in_file(at):
+    """The caption that names the lines the driver file leaves out, checked
+    to sit straight under the driver panel; None when there is none."""
+    nodes = list(at.tabs[1].children.values())
+    found = [(i, n.value) for i, n in enumerate(nodes) if n.type == "caption"
+             and n.value.startswith("Not in your driver file")]
+    if not found:
+        return None
+    ((i, text),) = found
+    assert nodes[i - 1].type == "expander"
+    assert nodes[i - 1].label == "Driver assumptions"
+    return text
+
+
+def _forecast_rows(full_df, line):
+    """The forecast's values for one line, a row per month built."""
+    return list(full_df[(full_df["type"] == "forecast")
+                        & (full_df["line_item"] == line)]["value"])
+
+
+@pytest.fixture
+def overrides_sent():
+    """Keeps the driver overrides each forecast was run with, while the test
+    runs."""
+    import src.step2_forecast_engine as engine
+    real_forecast = engine.calculate_forecast
+    sent = []
+
+    def keep(*args, **kwargs):
+        sent.append(kwargs.get("driver_overrides"))
+        return real_forecast(*args, **kwargs)
+
+    with patch("src.step2_forecast_engine.calculate_forecast", side_effect=keep):
+        yield sent
+
+
+class TestStep7aMissingLines:
+
+    def test_7a_a_caption_names_the_lines_missing_from_the_file(self, own_driver_file):
+        # The sample file lists all six lines: no caption
+        at = _app("views/forecast.py")
+        at.run()
+        assert not at.exception
+        assert _not_in_file(at) is None
+        # Two lines left out, a schedule line and a value line: both named,
+        # in the panel's order
+        own_driver_file(_MISSING)
+        at = _app("views/forecast.py")
+        at.run()
+        assert not at.exception
+        assert _not_in_file(at) == _BOTH_MISSING
+        # One line left out
+        own_driver_file({"IT Infrastructure": None})
+        at = _app("views/forecast.py")
+        at.run()
+        assert not at.exception
+        assert _not_in_file(at) == ("Not in your driver file: IT Infrastructure. "
+                                    "It is not forecast until you set a driver.")
+
+    def test_7a_an_untouched_reforecast_leaves_the_missing_lines_out(
+            self, own_driver_file, pdf_inputs, overrides_sent):
+        # The sample file first, as before, then the file with two lines left
+        # out: an untouched Re-forecast equals the base forecast in full
+        for changes in (None, _MISSING):
+            if changes:
+                own_driver_file(changes)
+            runs, received = {}, {}
+            for reforecast in (False, True):
+                client = _PromptKeeper()
+                at = runs[reforecast] = _live(client)
+                if reforecast:
+                    _click(at, "Re-forecast")
+                    assert at.session_state["_adjusted"]
+                    sent = overrides_sent[-1]
+                _click(at, "Write commentary")
+                received[reforecast] = _received(at, pdf_inputs, client)
+            base, untouched = received[False], received[True]
+            pd.testing.assert_frame_equal(untouched["full_df"], base["full_df"])
+            pd.testing.assert_frame_equal(untouched["pnl_df"], base["pnl_df"])
+            assert untouched["flags"] == base["flags"]
+            pd.testing.assert_frame_equal(untouched["drivers_df"], base["drivers_df"])
+            assert untouched["pdf_drivers"] == base["pdf_drivers"]
+            assert untouched["prompt"] == base["prompt"]
+            assert untouched["audit"] == base["audit"]
+        # Neither missing line is sent, so neither is forecast, and the base
+        # forecast's MISSING_DRIVER flags stand, one a month for each
+        assert sorted(sent) == ["COGS", "R&D Expense", "Revenue"]
+        for line in _MISSING:
+            assert _forecast_rows(untouched["full_df"], line) == []
+            assert untouched["flags"].count("MISSING_DRIVER: {}".format(line)) == 6
+        assert len(untouched["flags"]) == 12
+        assert _not_in_file(runs[True]) == _BOTH_MISSING
+        # The base forecast signed off, then an untouched Re-forecast: the
+        # result is the same, so the commentary and the sign-off stand
+        at = runs[False]
+        _sign(at, "A. Reviewer")
+        assert _section(at)[2][1].startswith(_FINAL_CHIP)
+        _click(at, "Re-forecast")
+        assert "_commentary_text" in at.session_state
+        assert _section(at)[2][1].startswith(_FINAL_CHIP)
+
+    def test_7a_a_missing_line_is_forecast_once_its_controls_change(
+            self, own_driver_file, pdf_inputs, overrides_sent):
+        own_driver_file(_MISSING)
+        at = _live()
+        _click(at, "Write commentary")
+        assert not _sign_buttons(at)[0].disabled
+        # A new value sets the value line: it leaves the caption, and Sign
+        # off waits for a Re-forecast
+        at.number_input(key="value_it_infrastructure").set_value(50000.0).run()
+        assert _not_in_file(at) == ("Not in your driver file: Marketing Spend. "
+                                    "It is not forecast until you set a driver.")
+        assert _sign_buttons(at)[0].disabled
+        _click(at, "Re-forecast")
+        assert overrides_sent[-1]["IT Infrastructure"] == {"method": "fixed",
+                                                           "value": 50000.0}
+        assert "Marketing Spend" not in overrides_sent[-1]
+        full_df, _, _, flags = pdf_inputs[-1]
+        assert _forecast_rows(full_df, "IT Infrastructure") == [50000.0] * 6
+        assert "MISSING_DRIVER: IT Infrastructure" not in flags
+        assert flags == ["MISSING_DRIVER: Marketing Spend"] * 6
+        # Back to the value the panel opened with, the line is unset again,
+        # so the forecast on screen no longer matches the panel
+        _click(at, "Write commentary")
+        assert not _sign_buttons(at)[0].disabled
+        at.number_input(key="value_it_infrastructure").set_value(45000.0).run()
+        assert _not_in_file(at) == _BOTH_MISSING
+        assert _sign_buttons(at)[0].disabled
+        at.number_input(key="value_it_infrastructure").set_value(50000.0).run()
+        assert not _sign_buttons(at)[0].disabled
+        # The schedule line is set by a method that takes a value
+        at.selectbox(key="method_marketing_spend").set_value("fixed").run()
+        at.number_input(key="value_marketing_spend").set_value(20000.0).run()
+        assert _not_in_file(at) is None
+        _click(at, "Re-forecast")
+        full_df, _, _, flags = pdf_inputs[-1]
+        assert _forecast_rows(full_df, "Marketing Spend") == [20000.0] * 6
+        assert flags == []
+        # Back on its schedule, as the panel opened, it is unset again; Reset
+        # defaults leaves both lines unset
+        at.selectbox(key="method_marketing_spend").set_value("cac_driven").run()
+        assert _not_in_file(at) == ("Not in your driver file: Marketing Spend. "
+                                    "It is not forecast until you set a driver.")
+        _click(at, "Reset defaults")
+        assert _not_in_file(at) == _BOTH_MISSING
+        assert not at.session_state["_adjusted"]
 
 
 # =============================================================================

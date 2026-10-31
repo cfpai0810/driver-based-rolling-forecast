@@ -150,9 +150,10 @@ click Write commentary.
 
 The Forecast page lets you change any driver's method and value in its Driver
 assumptions panel without editing CSV files. The panel opens on the drivers in
-your `driver_table.csv`, and Reset defaults puts them back. Changes take effect
-when you click Re-forecast. The base forecast is cached, so resetting to defaults
-is instant.
+your `driver_table.csv`, and Reset defaults puts them back. A line your file
+leaves out is not forecast until you set a driver for it on the panel. Changes
+take effect when you click Re-forecast. The base forecast is cached, so resetting
+to defaults is instant.
 
 ## Constraints worth knowing
 

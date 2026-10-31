@@ -241,7 +241,7 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               166 tests
+  test_pipeline.py               169 tests
   test_signoff.py                9 tests: the sign-off rule
 ```
 
@@ -287,7 +287,7 @@ so any run is fully reproducible.
 
 ## Test suite
 
-175 tests, no real API calls:
+178 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt
@@ -300,8 +300,9 @@ driver overrides and the driver controls, the commentary fingerprint and
 section parsing, the PDF and CSV builders, the session audit record, the
 worked example and the governance diagrams, the key gate, plain messages
 for failed model calls, and the Home and Forecast pages (the worked example
-button, the KPI tiles, the driver panel opening on the driver file, the
-driver notes after an override, and the tabular-figures rule in the theme),
+button, the KPI tiles, the driver panel opening on the driver file and
+leaving out a line the file does not list until it is set, the driver notes
+after an override, and the tabular-figures rule in the theme),
 and the series look: the theme colour,
 a banner on every page, the status chips, the Home blocks and page links,
 the page titles and addresses, the tab order, the live run inside its own
